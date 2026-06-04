@@ -1,189 +1,120 @@
-# Ravend — Orquestrador SDD para OpenCode
+# Ravend
 
-## Visão geral
+## O que é
 
-O Ravend é um workspace local de orquestração para OpenCode focado em desenvolvimento de software com:
+O Ravend é um orquestrador de desenvolvimento de software para OpenCode.
 
-- SDD como fluxo padrão;
-- agentes com papéis estáveis;
-- skills com especialização por stack;
-- manifests JSON para handoff objetivo;
-- memória incremental em arquivos.
+Ele foi desenhado para operar como uma CLI especializada dentro deste repositório, com:
+- identidade própria;
+- fluxo SDD;
+- capacidade de roteamento por stack;
+- memória estável do projeto;
+- auto-otimização do próprio harness quando solicitado.
 
-A ideia central é simples:
+## O que significa “o Ravend saber quem ele é”
 
-- **agentes** resolvem responsabilidades do fluxo;
-- **skills** resolvem especialização técnica;
-- **manifests** reduzem ambiguidade;
-- **knowledge** evita repetição de erro;
-- **planner** decide o que carregar e quem chamar.
+Significa que, ao abrir o OpenCode neste diretório, o runtime já encontra:
+- regras do Ravend em `AGENTS.md`;
+- agente primário em `.opencode/agents/orchestrator.md`;
+- contexto estável em `.lla/context/`;
+- contexto do próprio Ravend em arquivos específicos;
+- skills de processo e de otimização;
+- commands que tratam o Ravend como uma interface CLI.
 
-## Decisão arquitetural principal
+## Como o Ravend pensa
 
-O Ravend não cria muitos agentes especializados logo no começo.
+O Ravend não deve agir como um chatbot genérico.
+Ele deve agir como:
+- orquestrador;
+- roteador técnico;
+- executor incremental;
+- mantenedor do próprio harness quando solicitado.
 
-Em vez disso:
+## Onde manter cada coisa
 
-- `implementer` continua sendo o papel de implementação;
-- `reviewer` continua sendo o papel de revisão;
-- `planner` identifica a stack dominante;
-- o agente certo carrega a skill certa.
+### `AGENTS.md`
+Identidade do Ravend e regras globais do repo.
 
-Hoje as stacks priorizadas são:
-
-- Quarkus
-- Spring
-- Angular
-
-## Por que isso existe
-
-Porque os problemas mais comuns em fluxos agentic são:
-
-- contexto demais;
-- delegação ruim;
-- prompts monolíticos;
-- pouca continuidade entre sessões;
-- repetição dos mesmos erros.
-
-O Ravend tenta resolver isso com:
-
-- estado persistido;
-- handoff explícito;
-- especialização sob demanda;
-- knowledge indexada;
-- fluxo mínimo viável.
-
-## Estrutura principal
-
-    .
-    ├── AGENTS.md
-    ├── README.md
-    ├── opencode.json
-    ├── .opencode/
-    │   ├── agents/
-    │   ├── commands/
-    │   └── skills/
-    └── .lla/
-        ├── context/
-        ├── templates/
-        ├── manifests/
-        ├── knowledge/
-        └── sdd/current/
-
-## Diretórios
+### `opencode.json`
+Configuração do OpenCode para o repo:
+- agente padrão
+- instructions
+- permissões
+- MCPs
+- compaction
 
 ### `.opencode/agents/`
-Papéis do workflow.
-
-### `.opencode/commands/`
-Entradas de fluxo.
+Papéis operacionais do fluxo.
 
 ### `.opencode/skills/`
-Procedimentos reutilizáveis e especialização técnica.
+Procedimentos reutilizáveis e capacidades especializadas.
 
-### `.lla/context/`
-Contexto estável do projeto.
+### `.opencode/commands/`
+Portas de entrada de uso do Ravend como CLI.
 
-### `.lla/templates/`
-Modelos de artefatos.
+### `.lla/context/project.md`
+Contexto funcional do projeto.
 
-### `.lla/manifests/`
-Contratos operacionais em JSON.
+### `.lla/context/architecture.md`
+Contexto arquitetural do projeto.
 
-### `.lla/knowledge/`
-Aprendizado incremental seletivo.
+### `.lla/context/conventions.md`
+Padrões e convenções da codebase.
+
+### `.lla/context/stack.md`
+Stack, comandos, heurísticas de identificação e padrões técnicos.
+
+### `.lla/context/ravend-identity.md`
+Identidade operacional do Ravend.
+
+### `.lla/context/ravend-optimization.md`
+Princípios de auto-otimização do harness Ravend.
 
 ### `.lla/sdd/current/`
-Estado atual da entrega em andamento.
+Estado da demanda ativa.
 
-## Papéis dos agentes
+### `.lla/manifests/`
+Contratos JSON de task, handoff e knowledge.
 
-### `orchestrator`
-Coordena o fluxo e escolhe o menor caminho seguro.
+### `.lla/knowledge/`
+Memória incremental seletiva.
 
-### `intake`
-Transforma demanda bruta em contexto inicial.
+## Commands do Ravend
 
-### `spec-writer`
-Produz PRD e tech spec.
+### `/ravend-whoami`
+Explica quem o Ravend é, como está configurado e como está operando.
 
-### `planner`
-Identifica stack, escolhe skills, define plano mínimo.
+### `/ravend-optimize`
+Analisa o próprio harness e sugere melhorias com foco em simplicidade, economia de tokens e rastreabilidade.
 
-### `task-decomposer`
-Quebra em tarefas pequenas.
+### `/ravend-evolve`
+Propõe ou executa evolução incremental do próprio harness quando solicitado.
 
-### `implementer`
-Implementa uma tarefa por vez.
+### `/sdd-start`
+Inicia fluxo SDD.
 
-### `qa`
-Valida com testes e build.
+### `/sdd-jira`
+Inicia fluxo SDD a partir de um item Jira.
 
-### `reviewer`
-Revisa qualidade, aderência e risco.
+### `/sdd-review`
+Executa review.
 
-### `knowledge-curator`
-Transforma findings recorrentes em conhecimento reutilizável.
+### `/sdd-qa`
+Executa QA.
 
-## Especialização por stack
+## Fluxo mental recomendado
 
-O planner deve responder:
+1. entender a demanda;
+2. identificar o problema real;
+3. separar fatos, hipóteses e dúvidas;
+4. decidir se precisa de fluxo completo ou fast path;
+5. decidir se usa agent, subagent, skill, command ou arquivo de contexto;
+6. executar com contexto mínimo suficiente;
+7. persistir estado;
+8. capturar aprendizado útil;
+9. otimizar o próprio fluxo quando pedido.
 
-- a mudança é Quarkus?
-- é Spring?
-- é Angular?
-- é full stack?
-- o foco é implementação ou review?
+## Observação importante
 
-Com isso, ele aciona skills como:
-
-- `quarkus-implementation`
-- `quarkus-review`
-- `spring-implementation`
-- `spring-review`
-- `angular-implementation`
-- `angular-review`
-
-## Fluxo resumido
-
-1. entrada
-2. intake
-3. PRD
-4. tech spec
-5. tasks
-6. implementação
-7. QA
-8. review
-9. captura de conhecimento
-10. aceite
-
-## Manutenção
-
-### Mude `AGENTS.md` quando
-- mudar política global;
-- mudar roteamento;
-- mudar regra do fluxo.
-
-### Mude `.opencode/skills/` quando
-- mudar padrão técnico;
-- surgir erro recorrente;
-- surgir nova convenção da stack.
-
-### Mude `.lla/context/` quando
-- mudar arquitetura;
-- mudar stack;
-- mudar convenções;
-- mudar comandos de build/teste.
-
-### Mude `.lla/manifests/` quando
-- mudar contrato de handoff;
-- mudar contrato da task;
-- mudar taxonomia da knowledge.
-
-## Direção futura
-
-O próximo crescimento natural é:
-
-- refinar as skills por stack com padrões da tua codebase real;
-- enriquecer a knowledge por framework e camada;
-- talvez criar poucos especialistas reais no futuro, mas só onde houver dor comprovada.
+O Ravend não replica instruções ocultas de plataforma.
+O que ele faz é codificar no repositório a identidade, o contexto e os comportamentos mais importantes para operar de forma consistente no OpenCode.
