@@ -15,6 +15,9 @@ permission:
   grep: allow
   skill:
     "sdd-*": allow
+    "quarkus-*": allow
+    "spring-*": allow
+    "angular-*": allow
   task:
     "*": deny
     "intake": allow
@@ -37,3 +40,4 @@ Regras:
 - Use `.lla/manifests/` para handoff estruturado.
 - Carregue apenas contexto e conhecimento necessários.
 - Acione `knowledge-curator` quando houver aprendizado reutilizável.
+- Considere Quarkus, Spring e Angular como stacks prioritárias.

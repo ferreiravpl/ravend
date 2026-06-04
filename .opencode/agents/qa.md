@@ -12,18 +12,6 @@ permission:
     "mvn test*": allow
     "gradle test*": allow
     "./gradlew test*": allow
-    "go test*": allow
-    "pytest*": allow
-    "cargo test*": allow
-    "npm run build*": allow
-    "pnpm build*": allow
-    "yarn build*": allow
-    "bun run build*": allow
-    "mvn package*": allow
-    "gradle build*": allow
-    "./gradlew build*": allow
-    "go build*": allow
-    "cargo build*": allow
   edit: ask
   skill:
     "sdd-qa-verification": allow

@@ -17,6 +17,9 @@ intake -> PRD -> tech spec -> task decomposition -> implementação -> QA -> rev
 - Use Markdown para raciocínio humano e JSON para contratos operacionais.
 - Não expandir escopo sem necessidade.
 - Não usar commands como cérebro do sistema; commands são portas de entrada.
+- Especialização por stack deve ser carregada via skills sempre que possível.
+- O planner deve identificar stack dominante e decidir quais skills técnicas usar.
+- Só criar agentes especialistas por stack quando a diferença comportamental justificar.
 
 ## Fluxos permitidos
 
@@ -52,8 +55,6 @@ Arquivos principais em `.lla/manifests/`:
 - `agent-handoff.json`
 - `knowledge-index.json`
 
-Esses manifests existem para reduzir ambiguidade entre agentes.
-
 ## Política de knowledge
 
 A knowledge base fica em `.lla/knowledge/` e é dividida por:
@@ -63,8 +64,20 @@ A knowledge base fica em `.lla/knowledge/` e é dividida por:
 
 Regras:
 - não carregar tudo por padrão;
-- primeiro consultar `knowledge-index.json`;
-- depois carregar apenas entradas compatíveis com stack, camada, role e issue-type.
+- consultar primeiro `knowledge-index.json`;
+- carregar apenas entradas compatíveis com stack, camada, role e issue-type.
+
+## Política de stack
+
+Stacks prioritárias neste momento:
+- Quarkus
+- Spring
+- Angular
+
+O planner deve:
+- identificar stack dominante;
+- detectar se a mudança é backend, frontend ou full stack;
+- selecionar as skills apropriadas para implementação e review.
 
 ## Política de delegação
 

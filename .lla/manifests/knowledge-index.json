@@ -2,9 +2,9 @@
   "version": 1,
   "taxonomy": {
     "role": ["implementer", "reviewer", "shared"],
-    "kind": ["review", "qa", "shared-rule"],
-    "layer": ["controller", "service", "repository", "api", "ui", "infra", "domain", "test"],
-    "issue_type": ["nullability", "validation", "error-handling", "test-gap", "naming", "performance", "security", "architecture", "style"]
+    "framework": ["quarkus", "spring", "angular"],
+    "layer": ["controller", "service", "repository", "component", "template", "api", "domain", "infra", "test"],
+    "issue_type": ["validation", "error-handling", "test-gap", "naming", "performance", "security", "architecture", "style", "reactivity", "transaction"]
   },
   "entries": []
 }

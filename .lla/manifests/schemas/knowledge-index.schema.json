@@ -7,10 +7,10 @@
     "version": { "type": "integer" },
     "taxonomy": {
       "type": "object",
-      "required": ["role", "kind", "layer", "issue_type"],
+      "required": ["role", "framework", "layer", "issue_type"],
       "properties": {
         "role": { "type": "array", "items": { "type": "string" } },
-        "kind": { "type": "array", "items": { "type": "string" } },
+        "framework": { "type": "array", "items": { "type": "string" } },
         "layer": { "type": "array", "items": { "type": "string" } },
         "issue_type": { "type": "array", "items": { "type": "string" } }
       },

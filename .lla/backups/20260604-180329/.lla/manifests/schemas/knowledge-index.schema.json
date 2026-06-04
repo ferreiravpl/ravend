@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "knowledge-index",
+  "type": "object",
+  "required": ["version", "taxonomy", "entries"],
+  "properties": {
+    "version": { "type": "integer" },
+    "taxonomy": {
+      "type": "object",
+      "required": ["role", "kind", "layer", "issue_type"],
+      "properties": {
+        "role": { "type": "array", "items": { "type": "string" } },
+        "kind": { "type": "array", "items": { "type": "string" } },
+        "layer": { "type": "array", "items": { "type": "string" } },
+        "issue_type": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "role", "title", "tags", "path", "when_to_load", "source"],
+        "properties": {
+          "id": { "type": "string" },
+          "role": { "type": "string" },
+          "title": { "type": "string" },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "path": { "type": "string" },
+          "when_to_load": { "type": "array", "items": { "type": "string" } },
+          "source": {
+            "type": "object",
+            "required": ["kind", "ref"],
+            "properties": {
+              "kind": { "type": "string" },
+              "ref": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

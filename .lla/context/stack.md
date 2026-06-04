@@ -1,5 +1,10 @@
 # Contexto de Stack
 
+Stacks prioritárias:
+- Quarkus
+- Spring
+- Angular
+
 Preencha com:
 - linguagens
 - frameworks
@@ -7,3 +12,4 @@ Preencha com:
 - ferramentas de teste
 - comandos úteis
 - requisitos de ambiente
+- padrões específicos por stack
