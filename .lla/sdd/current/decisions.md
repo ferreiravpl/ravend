@@ -1,3 +1,3 @@
-# Decisions
+# Decisões
 
-No decisions recorded yet.
+Nenhuma decisão registrada.

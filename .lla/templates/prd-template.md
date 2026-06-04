@@ -1,10 +1,10 @@
-# PRD Template
+# Template de PRD
 
-## Problem
-## Goal
-## Non-goals
-## Users / Actors
-## Scope
-## Constraints
-## Acceptance criteria
-## Risks
+## Problema
+## Objetivo
+## Não objetivos
+## Usuários / Atores
+## Escopo
+## Restrições
+## Critérios de aceite
+## Riscos

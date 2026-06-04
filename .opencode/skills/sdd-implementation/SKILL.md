@@ -1,18 +1,16 @@
 ---
 name: sdd-implementation
-description: Implement one bounded task while minimizing scope growth and context usage.
+description: Guia a implementação de uma única task com contexto mínimo suficiente.
 compatibility: opencode
 ---
-## What I do
-- execute one task at a time
-- use only the relevant context and knowledge entries
-- record decisions that matter for later review
+## Objetivo
+Implementar sem inflar escopo nem contexto.
 
-## When to use me
-Use when a task is ready for coding.
+## Quando usar
+Use quando existir task ativa delimitada.
 
-## Procedure
-1. Read active task scope and relevant artifacts only.
-2. Load project conventions and only the necessary knowledge entries.
-3. Implement the change without broadening scope.
-4. Record key decisions and what still needs verification.
+## Procedimento
+1. Leia a task ativa e apenas artefatos relevantes.
+2. Carregue só a knowledge necessária.
+3. Implemente a mudança delimitada.
+4. Registre decisões importantes.

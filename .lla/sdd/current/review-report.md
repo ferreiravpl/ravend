@@ -1,3 +1,3 @@
-# Review Report
+# Relatório de Review
 
-No review run yet.
+Nenhuma revisão executada.

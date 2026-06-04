@@ -3,10 +3,16 @@
   "task_id": "",
   "title": "",
   "status": "idle",
+  "source": {
+    "jira_key": "",
+    "issue_url": ""
+  },
   "labels": [],
+  "stack_tags": [],
   "files_in_scope": [],
   "files_out_of_scope": [],
   "acceptance_criteria": [],
+  "implementation_notes": [],
   "test_commands": [],
   "review_focus": [],
   "knowledge_refs": []

@@ -1,3 +1,3 @@
 # Tasks
 
-No active task decomposition yet.
+Nenhuma decomposição ativa registrada.

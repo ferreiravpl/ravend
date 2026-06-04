@@ -1,15 +1,19 @@
-# Knowledge Base
+# Base de Conhecimento
 
-Store compact, reusable lessons here.
+## Objetivo
 
-## Rule
+Armazenar aprendizado incremental sem forçar carga de contexto total.
 
-Do not dump all historical knowledge into active context.
-Use `knowledge-index.json` to find only relevant entries.
+## Regras
 
-## Entry strategy
+- Nunca carregar toda a base por padrão.
+- Sempre consultar primeiro `.lla/manifests/knowledge-index.json`.
+- Carregar somente entradas relevantes à role, stack, camada e tipo de problema.
+- Preferir uma lição por arquivo.
+- Preferir orientação compacta a transcrição longa.
 
-- One lesson per file when practical
-- Keep entries compact
-- Add tags for language, framework, layer, issue type, and agent relevance
-- Prefer distilled guidance over verbose transcripts
+## Estrutura
+
+- `reviewer/`: lições originadas de review
+- `implementer/`: guardrails de implementação
+- `shared/`: convenções ou lições compartilhadas

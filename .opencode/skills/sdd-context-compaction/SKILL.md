@@ -1,18 +1,15 @@
 ---
 name: sdd-context-compaction
-description: Compact long-running task state into minimal persistent artifacts and scoped manifests.
+description: Compacta o estado de sessões longas em arquivos persistentes.
 compatibility: opencode
 ---
-## What I do
-- reduce context pressure
-- preserve decisions and progress in files
-- keep future steps low-token and recoverable
+## Objetivo
+Reduzir pressão de contexto e preservar continuidade.
 
-## When to use me
-Use when the task history is growing or after a major phase transition.
+## Quando usar
+Use em transições de fase ou quando o histórico estiver grande.
 
-## Procedure
-1. Move stable conclusions into `decisions.md` and `progress.md`.
-2. Remove stale assumptions from active reasoning.
-3. Refresh the active task scope manifest.
-4. Keep only the current step and necessary references in working context.
+## Procedimento
+1. Resuma progresso e decisões em arquivos próprios.
+2. Atualize manifests ativos.
+3. Elimine dependência de memória conversacional longa.

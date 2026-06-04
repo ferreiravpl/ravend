@@ -1,17 +1,16 @@
 ---
 name: sdd-qa-verification
-description: Verify a bounded change through focused tests, build, and requirement-oriented validation.
+description: Verifica a mudança com o menor conjunto suficiente de testes e build.
 compatibility: opencode
 ---
-## What I do
-- choose the smallest sufficient verification set
-- run focused tests and build checks
-- report pass, fail, gaps, and residual risk
+## Objetivo
+Validar tecnicamente a task ativa.
 
-## When to use me
-Use after implementation or when the user requests QA only.
+## Quando usar
+Use após implementação ou quando a solicitação for QA-only.
 
-## Procedure
-1. Read the active task scope and acceptance criteria.
-2. Run the smallest sufficient checks.
-3. Record commands, outcomes, failures, and residual gaps in `.lla/sdd/current/qa-report.md`.
+## Procedimento
+1. Leia task ativa e critérios de aceite.
+2. Escolha o menor conjunto suficiente de verificações.
+3. Execute testes e build relevantes.
+4. Grave resultados em `.lla/sdd/current/qa-report.md`.

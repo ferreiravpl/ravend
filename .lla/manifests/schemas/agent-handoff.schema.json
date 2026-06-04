@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "agent-handoff",
+  "type": "object",
+  "required": [
+    "version",
+    "source_agent",
+    "target_agent",
+    "objective",
+    "mode",
+    "required_inputs",
+    "artifacts",
+    "constraints",
+    "done_definition",
+    "knowledge_refs"
+  ],
+  "properties": {
+    "version": { "type": "integer" },
+    "source_agent": { "type": "string" },
+    "target_agent": { "type": "string" },
+    "objective": { "type": "string" },
+    "mode": { "type": "string" },
+    "required_inputs": { "type": "array", "items": { "type": "string" } },
+    "artifacts": { "type": "array", "items": { "type": "string" } },
+    "constraints": { "type": "array", "items": { "type": "string" } },
+    "done_definition": { "type": "array", "items": { "type": "string" } },
+    "knowledge_refs": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": false
+}

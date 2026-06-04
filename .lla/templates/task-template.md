@@ -1,10 +1,11 @@
-# Task Template
+# Template de Task
 
 - id:
-- title:
-- purpose:
-- inputs:
-- files in scope:
-- steps:
-- validation:
-- done when:
+- título:
+- propósito:
+- entradas:
+- arquivos em escopo:
+- fora de escopo:
+- passos:
+- validação:
+- definição de pronto:

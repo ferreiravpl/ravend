@@ -1,3 +1,8 @@
-# Engineering Conventions
+# Convenções de Engenharia
 
-Fill this file with coding standards, testing rules, branch conventions, PR expectations, and code review policy.
+Preencha com:
+- padrões de código
+- convenções de nome
+- padrões de teste
+- regras de revisão
+- padrões de organização do projeto

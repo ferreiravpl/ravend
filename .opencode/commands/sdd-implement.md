@@ -1,7 +1,7 @@
 ---
-description: Implement a specific task or bounded scope directly.
+description: Executa implementação de uma tarefa ou escopo delimitado.
 agent: implementer
 ---
-Implement the bounded task or scope: $ARGUMENTS
+Implemente a task ou o escopo delimitado: $ARGUMENTS
 
-Read the active manifests, task scope, conventions, and only relevant knowledge before making changes.
+Leia apenas o escopo necessário antes de alterar código.

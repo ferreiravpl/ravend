@@ -1,3 +1,3 @@
-# QA Report
+# Relatório de QA
 
-No QA run yet.
+Nenhuma validação executada.

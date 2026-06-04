@@ -1,31 +1,40 @@
-# LLA SDD Orchestrator
+# Ravend — Regras Operacionais do Orquestrador
 
-This repository is an OpenCode-first software development orchestrator.
+## Missão
 
-## Mission
+Orquestrar desenvolvimento de software com SDD como fluxo padrão:
 
-Drive software work through an SDD workflow by default:
+intake -> PRD -> tech spec -> task decomposition -> implementação -> QA -> review -> loop até aceite
 
-intake -> PRD -> tech spec -> task decomposition -> implementation -> QA -> code review -> loop until accepted
+## Regras principais
 
-## Important operating rules
+- O fluxo SDD é o padrão, não a única opção.
+- O menor fluxo seguro deve ser preferido.
+- Se já existir plano suficiente, o sistema pode seguir por fast path.
+- O estado relevante deve ser persistido em `.lla/sdd/current/`.
+- Contratos operacionais devem ficar em `.lla/manifests/`.
+- Conhecimento incremental deve ser seletivo, nunca carregado integralmente por padrão.
+- Use Markdown para raciocínio humano e JSON para contratos operacionais.
+- Não expandir escopo sem necessidade.
+- Não usar commands como cérebro do sistema; commands são portas de entrada.
 
-- SDD is the default path, but agents may be invoked independently when the user already has an approved plan or needs only QA or review.
-- Never force PRD and tech spec when the task is already sufficiently bounded and the user explicitly asks for implementation, QA, or review only.
-- Persist important state to `.lla/sdd/current/` instead of relying on long conversational memory.
-- Prefer loading skills on demand instead of embedding large static instructions in agent prompts.
-- Prefer compact, scoped context over broad repository-wide dumps.
-- Use `.lla/manifests/*.json` for machine-readable task scope, file scope, and handoff metadata.
-- Use `.lla/knowledge/` as incremental memory. Do not load the entire knowledge base by default.
-- Load only relevant knowledge entries by stack, layer, issue type, or agent role.
-- Reviewer findings that represent reusable lessons should be distilled into compact knowledge entries and indexed.
-- Reviewer and QA are allowed to reject implementation and require another iteration.
-- Acceptance occurs only after active task completion, QA sufficiency, and review approval.
+## Fluxos permitidos
 
-## State files
+### Fluxo completo
+Use quando a demanda estiver mal especificada ou tiver impacto arquitetural relevante.
 
-Primary working files live under `.lla/sdd/current/`:
+### Fast path de implementação
+Use quando já existir task bem delimitada e plano suficiente.
 
+### Fast path de QA
+Use quando o objetivo for validar tecnicamente um escopo já definido.
+
+### Fast path de review
+Use quando o objetivo for revisar mudança existente.
+
+## Política de persistência
+
+Arquivos principais em `.lla/sdd/current/`:
 - `intake.md`
 - `prd.md`
 - `tech-spec.md`
@@ -36,35 +45,45 @@ Primary working files live under `.lla/sdd/current/`:
 - `review-report.md`
 - `acceptance.md`
 
-## Knowledge model
+## Política de manifests
 
-Knowledge is split into:
+Arquivos principais em `.lla/manifests/`:
+- `task-scope.json`
+- `agent-handoff.json`
+- `knowledge-index.json`
 
-- `reviewer/` for review-driven lessons
-- `implementer/` for implementation guardrails
-- `shared/` for cross-role conventions
+Esses manifests existem para reduzir ambiguidade entre agentes.
 
-Use the knowledge index first, then load only relevant entries.
+## Política de knowledge
 
-## Agent invocation policy
+A knowledge base fica em `.lla/knowledge/` e é dividida por:
+- `reviewer/`
+- `implementer/`
+- `shared/`
 
-Default entrypoint is `orchestrator`.
+Regras:
+- não carregar tudo por padrão;
+- primeiro consultar `knowledge-index.json`;
+- depois carregar apenas entradas compatíveis com stack, camada, role e issue-type.
 
-The orchestrator may delegate to:
+## Política de delegação
 
+O agente principal é `orchestrator`.
+
+Ele pode delegar para:
 - `intake`
-- `planner`
 - `spec-writer`
+- `planner`
 - `task-decomposer`
 - `implementer`
 - `qa`
 - `reviewer`
 - `knowledge-curator`
 
-Direct use is also valid when requested by the user.
+## Regras de qualidade
 
-## Artifact format policy
-
-Use Markdown for narrative and decision-heavy artifacts.
-Use JSON for manifests, indexes, and compact machine-readable state.
-Do not introduce XML unless an external tool requires XML.
+- QA valida, não redesenha a solução.
+- Reviewer revisa, não implementa correções.
+- Implementer implementa apenas uma task delimitada por vez.
+- Planner planeja e delega; não deve virar implementador.
+- Knowledge-curator sintetiza aprendizado; não registra transcrição bruta.

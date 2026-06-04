@@ -1,9 +1,8 @@
 ---
-description: Start an SDD flow from a request, card title, or Jira issue key.
+description: Inicia um fluxo SDD a partir de uma solicitação textual.
 agent: orchestrator
 ---
-Start an SDD workflow for: $ARGUMENTS
+Inicie um fluxo SDD para: $ARGUMENTS
 
-Use the smallest safe path.
-If planning artifacts are missing, create or refine intake, PRD, and tech spec before implementation.
-If the request is already sufficiently scoped, explain why a fast path is safe.
+Use o menor caminho seguro.
+Se faltarem artefatos de especificação, produza intake, PRD e tech spec antes da implementação.

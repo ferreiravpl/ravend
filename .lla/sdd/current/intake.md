@@ -1,3 +1,3 @@
 # Intake
 
-No active intake yet.
+Nenhuma demanda ativa registrada.

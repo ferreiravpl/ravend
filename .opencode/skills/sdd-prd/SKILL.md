@@ -1,18 +1,16 @@
 ---
 name: sdd-prd
-description: Produce or refine a lightweight PRD from the active intake and project context.
+description: Produz ou refina um PRD proporcional à complexidade da demanda.
 compatibility: opencode
 ---
-## What I do
-- write a scoped PRD
-- define outcomes, constraints, and acceptance criteria
-- prevent coding from starting with fuzzy goals
+## Objetivo
+Definir problema, objetivo, escopo e critérios de aceite.
 
-## When to use me
-Use when the work is not already sufficiently specified.
+## Quando usar
+Use quando a demanda ainda não estiver claramente especificada.
 
-## Procedure
-1. Read intake and stable context.
-2. Define problem, goal, non-goals, scope, and acceptance criteria.
-3. Keep the PRD proportional to task complexity.
-4. Save or update `.lla/sdd/current/prd.md`.
+## Procedimento
+1. Leia o intake e o contexto do projeto.
+2. Defina problema, objetivo, escopo, não escopo e aceite.
+3. Mantenha o documento proporcional à complexidade.
+4. Grave em `.lla/sdd/current/prd.md`.

@@ -1,7 +1,7 @@
 ---
-description: Run QA verification for the active bounded task.
+description: Executa verificação de QA da task ativa.
 agent: qa
 ---
-Run QA verification for: $ARGUMENTS
+Execute a verificação de QA para: $ARGUMENTS
 
-Use the smallest sufficient test and build scope for the active change.
+Use o menor conjunto suficiente de testes e build.

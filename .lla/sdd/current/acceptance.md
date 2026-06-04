@@ -1,3 +1,3 @@
-# Acceptance
+# Aceite
 
-No accepted delivery yet.
+Nenhum aceite registrado.

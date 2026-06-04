@@ -19,27 +19,35 @@
       "build/**",
       "coverage/**",
       ".next/**",
-      ".turbo/**"
+      ".turbo/**",
+      "target/**",
+      ".gradle/**",
+      ".idea/**",
+      ".vscode/**"
     ]
   },
   "permission": {
-    "bash": "ask",
-    "edit": "ask",
-    "websearch": "allow",
+    "read": "allow",
+    "list": "allow",
+    "glob": "allow",
+    "grep": "allow",
     "webfetch": "allow",
+    "websearch": "allow",
+    "edit": "ask",
+    "bash": "ask",
     "skill": {
       "*": "allow"
     }
   },
   "mcp": {
+    "filesystem": {
+      "enabled": true
+    },
     "jira": {
       "enabled": false
     },
     "github": {
       "enabled": false
-    },
-    "filesystem": {
-      "enabled": true
     }
   }
 }

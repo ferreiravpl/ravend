@@ -1,3 +1,8 @@
-# Project Context
+# Contexto do Projeto
 
-Fill this file with the project mission, product domain, core modules, and business constraints.
+Preencha com:
+- missão do produto
+- domínio de negócio
+- principais capacidades
+- restrições de negócio
+- critérios globais de valor

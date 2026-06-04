@@ -1,3 +1,8 @@
-# Architecture Context
+# Contexto de Arquitetura
 
-Fill this file with repo structure, major components, data flow, integration points, and deployment model.
+Preencha com:
+- estrutura do repositório
+- módulos principais
+- integrações
+- fronteiras entre camadas
+- decisões arquiteturais importantes

@@ -1,18 +1,16 @@
 ---
 name: sdd-task-decomposition
-description: Break a spec or plan into bounded implementation tasks with machine-readable handoff metadata.
+description: Quebra uma demanda em tarefas pequenas com critérios de aceite e handoff objetivo.
 compatibility: opencode
 ---
-## What I do
-- decompose work into small tasks
-- define files in scope and validation steps
-- support low-context implementation through manifests
+## Objetivo
+Reduzir a demanda a tarefas executáveis e verificáveis.
 
-## When to use me
-Use after spec approval or when a direct implementation path still needs bounded tasks.
+## Quando usar
+Use após a spec ou quando houver plano suficiente para implementação.
 
-## Procedure
-1. Break the work into the smallest meaningful tasks.
-2. For each task, define acceptance criteria and validations.
-3. Update `.lla/sdd/current/tasks.md`.
-4. Update `.lla/manifests/task-scope.json` for the active task.
+## Procedimento
+1. Divida o trabalho em tarefas pequenas.
+2. Defina arquivos em escopo e fora de escopo.
+3. Defina critérios de aceite e validação.
+4. Atualize `tasks.md` e `task-scope.json`.

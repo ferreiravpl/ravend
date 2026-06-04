@@ -1,19 +1,16 @@
 ---
 name: sdd-intake
-description: Normalize a request, ticket, or Jira card into a compact intake artifact.
+description: Normaliza uma demanda, ticket ou card em um intake compacto e acionável.
 compatibility: opencode
 ---
-## What I do
-- convert a raw request into a normalized intake
-- extract objective, constraints, assumptions, and acceptance hints
-- prepare a clean handoff for PRD or planning
+## Objetivo
+Transformar entrada bruta em contexto inicial útil.
 
-## When to use me
-Use when the request starts from chat input, issue text, or an MCP-fetched card.
+## Quando usar
+Use quando a entrada vier do usuário, de ticket ou de card de ferramenta externa.
 
-## Procedure
-1. Capture the request source and identifiers.
-2. Extract the real problem, not just the requested change.
-3. Separate facts, assumptions, and missing information.
-4. Write a compact intake summary to `.lla/sdd/current/intake.md`.
-5. Prepare a handoff if PRD/spec/planning is needed.
+## Procedimento
+1. Identifique a origem da demanda.
+2. Extraia objetivo, restrições e sinais de aceite.
+3. Separe fatos, hipóteses e dúvidas.
+4. Grave em `.lla/sdd/current/intake.md`.

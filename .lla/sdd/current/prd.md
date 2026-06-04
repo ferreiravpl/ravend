@@ -1,3 +1,3 @@
 # PRD
 
-No active PRD yet.
+Nenhum PRD ativo registrado.

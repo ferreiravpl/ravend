@@ -1,18 +1,16 @@
 ---
 name: sdd-tech-spec
-description: Translate the active PRD or request into an implementable technical specification.
+description: Traduz PRD ou demanda em solução técnica implementável.
 compatibility: opencode
 ---
-## What I do
-- define solution shape and technical boundaries
-- map impacted modules and interfaces
-- capture risks, trade-offs, and test strategy
+## Objetivo
+Definir a solução técnica e seus limites.
 
-## When to use me
-Use when architecture or technical choices matter.
+## Quando usar
+Use quando decisões técnicas importarem para a execução.
 
-## Procedure
-1. Read the PRD or direct request and relevant repo context.
-2. Reuse existing architecture before proposing new structure.
-3. Define interfaces, data flow, file scope, and risks.
-4. Save or update `.lla/sdd/current/tech-spec.md`.
+## Procedimento
+1. Leia PRD ou intake e contexto técnico relevante.
+2. Reutilize a arquitetura existente antes de propor mudança estrutural.
+3. Defina módulos impactados, interfaces, riscos e estratégia de teste.
+4. Grave em `.lla/sdd/current/tech-spec.md`.

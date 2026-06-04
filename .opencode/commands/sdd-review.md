@@ -1,7 +1,7 @@
 ---
-description: Review the active change or a specific bounded scope.
+description: Executa review da mudança ativa ou de um escopo delimitado.
 agent: reviewer
 ---
-Review the active change or scope: $ARGUMENTS
+Revise a mudança ou o escopo: $ARGUMENTS
 
-Check alignment with conventions, active scope, risks, and maintainability.
+Valide aderência ao escopo, spec, convenções e riscos.

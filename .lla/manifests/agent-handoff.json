@@ -3,8 +3,10 @@
   "source_agent": "",
   "target_agent": "",
   "objective": "",
-  "inputs": [],
+  "mode": "full-flow",
+  "required_inputs": [],
   "artifacts": [],
   "constraints": [],
+  "done_definition": [],
   "knowledge_refs": []
 }

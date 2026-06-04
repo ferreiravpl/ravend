@@ -1,3 +1,3 @@
 # Tech Spec
 
-No active tech spec yet.
+Nenhuma especificação técnica ativa registrada.

@@ -1,10 +1,10 @@
-# Tech Spec Template
+# Template de Tech Spec
 
-## Scope mapping
-## Current architecture
-## Proposed design
-## Interfaces and contracts
-## Data model / migrations
-## Risks and trade-offs
-## Test strategy
+## Mapeamento de escopo
+## Arquitetura atual
+## Solução proposta
+## Interfaces e contratos
+## Modelo de dados / migrações
+## Riscos e trade-offs
+## Estratégia de testes
 ## Rollout / rollback
