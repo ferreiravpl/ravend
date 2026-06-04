@@ -22,10 +22,3 @@ Implemente apenas a task ativa.
 Leia apenas o escopo necessário.
 Use a skill técnica adequada à stack da task.
 Registre decisões relevantes em `.lla/sdd/current/decisions.md`.
-
-Regras:
-- siga o padrão dominante da codebase;
-- não expanda escopo;
-- não redesenhe arquitetura sem necessidade explícita;
-- prefira reaproveitar implementações existentes;
-- mantenha a mudança pequena, legível e validável.

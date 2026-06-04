@@ -16,48 +16,57 @@ intake -> PRD -> tech spec -> task decomposition -> implementação -> QA -> rev
 - Conhecimento incremental deve ser seletivo, nunca carregado integralmente por padrão.
 - Use Markdown para raciocínio humano e JSON para contratos operacionais.
 - Não expandir escopo sem necessidade.
-- Não usar commands como cérebro do sistema; commands são portas de entrada.
-- Especialização por stack deve ser carregada via skills sempre que possível.
-- O planner deve identificar stack dominante e decidir quais skills técnicas usar.
-- Só criar agentes especialistas por stack quando a diferença comportamental justificar.
+- Commands são portas de entrada, não o cérebro do sistema.
+- Especialização por stack deve entrar preferencialmente via skills.
+- O planner deve identificar stack dominante e selecionar as skills corretas.
+- Só criar agentes especialistas por stack quando a diferença de comportamento justificar de verdade.
 
-## Fluxos permitidos
+## Stacks prioritárias
 
-### Fluxo completo
-Use quando a demanda estiver mal especificada ou tiver impacto arquitetural relevante.
+- Quarkus
+- Spring
+- Angular
 
-### Fast path de implementação
-Use quando já existir task bem delimitada e plano suficiente.
+## Regras por papel
 
-### Fast path de QA
-Use quando o objetivo for validar tecnicamente um escopo já definido.
+### Orchestrator
+- escolhe o menor caminho seguro;
+- decide fluxo completo ou reduzido;
+- garante persistência de estado;
+- chama knowledge-curator quando houver lição reaproveitável.
 
-### Fast path de review
-Use quando o objetivo for revisar mudança existente.
+### Planner
+- identifica stack dominante;
+- detecta se a mudança é backend, frontend ou full stack;
+- escolhe skills adequadas;
+- evita plano inflado;
+- não implementa.
 
-## Política de persistência
+### Implementer
+- implementa apenas uma task delimitada;
+- carrega apenas contexto necessário;
+- usa a skill correta da stack;
+- registra decisões relevantes.
 
-Arquivos principais em `.lla/sdd/current/`:
-- `intake.md`
-- `prd.md`
-- `tech-spec.md`
-- `tasks.md`
-- `progress.md`
-- `decisions.md`
-- `qa-report.md`
-- `review-report.md`
-- `acceptance.md`
+### QA
+- valida tecnicamente;
+- não redesenha solução;
+- registra resultados e lacunas.
 
-## Política de manifests
+### Reviewer
+- revisa;
+- não implementa;
+- usa a skill correta da stack;
+- decide aceite, rejeição ou correções.
 
-Arquivos principais em `.lla/manifests/`:
-- `task-scope.json`
-- `agent-handoff.json`
-- `knowledge-index.json`
+### Knowledge-curator
+- sintetiza aprendizado;
+- não grava transcript bruto;
+- cria entradas curtas e indexadas.
 
 ## Política de knowledge
 
-A knowledge base fica em `.lla/knowledge/` e é dividida por:
+A knowledge base fica em `.lla/knowledge/` e é dividida em:
 - `reviewer/`
 - `implementer/`
 - `shared/`
@@ -65,38 +74,12 @@ A knowledge base fica em `.lla/knowledge/` e é dividida por:
 Regras:
 - não carregar tudo por padrão;
 - consultar primeiro `knowledge-index.json`;
-- carregar apenas entradas compatíveis com stack, camada, role e issue-type.
+- carregar apenas entradas compatíveis com framework, camada, role e tipo de problema.
 
-## Política de stack
+## Política de qualidade
 
-Stacks prioritárias neste momento:
-- Quarkus
-- Spring
-- Angular
-
-O planner deve:
-- identificar stack dominante;
-- detectar se a mudança é backend, frontend ou full stack;
-- selecionar as skills apropriadas para implementação e review.
-
-## Política de delegação
-
-O agente principal é `orchestrator`.
-
-Ele pode delegar para:
-- `intake`
-- `spec-writer`
-- `planner`
-- `task-decomposer`
-- `implementer`
-- `qa`
-- `reviewer`
-- `knowledge-curator`
-
-## Regras de qualidade
-
-- QA valida, não redesenha a solução.
-- Reviewer revisa, não implementa correções.
-- Implementer implementa apenas uma task delimitada por vez.
-- Planner planeja e delega; não deve virar implementador.
-- Knowledge-curator sintetiza aprendizado; não registra transcrição bruta.
+- seguir o padrão dominante da codebase;
+- reutilizar o que já existe antes de criar abstração nova;
+- preferir mudança pequena, legível e testável;
+- evitar soluções “genéricas” demais sem necessidade real;
+- manter separação clara de responsabilidade entre camadas.

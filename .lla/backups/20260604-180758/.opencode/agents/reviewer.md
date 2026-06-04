@@ -23,9 +23,3 @@ Você não implementa correções.
 Use a skill técnica adequada à stack da task.
 Registre findings em `.lla/sdd/current/review-report.md`.
 Sinalize lições reaproveitáveis para `knowledge-curator`.
-
-Regras:
-- revise contra o padrão real da codebase, não contra gosto pessoal;
-- priorize corretude, manutenibilidade, clareza e risco;
-- diferencie problema real de preferência estilística;
-- seja explícito no que bloqueia aceite e no que é melhoria opcional.

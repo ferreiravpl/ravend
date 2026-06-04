@@ -11,8 +11,6 @@ Armazenar aprendizado incremental sem forçar carga de contexto total.
 - Carregar somente entradas relevantes à role, framework, camada e tipo de problema.
 - Preferir uma lição por arquivo.
 - Preferir orientação compacta a transcrição longa.
-- Não transformar todo comentário de review em memória permanente.
-- Só registrar lição quando ela for reaproveitável.
 
 ## Estrutura
 
