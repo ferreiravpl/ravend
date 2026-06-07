@@ -40,7 +40,45 @@
     "implementation_notes": { "type": "array", "items": { "type": "string" } },
     "test_commands": { "type": "array", "items": { "type": "string" } },
     "review_focus": { "type": "array", "items": { "type": "string" } },
-    "knowledge_refs": { "type": "array", "items": { "type": "string" } }
+    "knowledge_refs": { "type": "array", "items": { "type": "string" } },
+    "inspect_first": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Arquivos a inspecionar antes de implementar"
+    },
+    "interface_to_implement": {
+      "type": "string",
+      "description": "Interface ou contrato a implementar, se aplicável"
+    },
+    "edge_cases": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Casos de borda a considerar"
+    },
+    "tests_to_implement": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Testes a implementar ou verificar"
+    },
+    "constraints": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Restrições: guardrails, padrões, limites"
+    },
+    "complexity": {
+      "type": "string",
+      "enum": ["LOW", "MEDIUM", "HIGH"],
+      "description": "Complexidade estimada da task"
+    },
+    "depends_on": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "IDs de tasks que esta depende"
+    },
+    "parallelizable": {
+      "type": "boolean",
+      "description": "Se a task pode ser executada em paralelo com outras"
+    }
   },
   "additionalProperties": false
 }

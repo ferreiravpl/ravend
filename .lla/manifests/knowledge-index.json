@@ -6,5 +6,116 @@
     "layer": ["controller", "resource", "service", "repository", "component", "template", "api", "domain", "infra", "test", "harness"],
     "issue_type": ["validation", "error-handling", "test-gap", "naming", "performance", "security", "architecture", "style", "reactivity", "transaction", "layering", "api-contract", "token-economy", "handoff", "orchestration"]
   },
-  "entries": []
+  "entries": [
+    {
+      "id": "AP-1",
+      "file": "shared/anti-patterns.md",
+      "role": ["reviewer", "implementer"],
+      "framework": ["spring"],
+      "layer": ["service", "controller", "repository"],
+      "issue_type": ["architecture"],
+      "pattern": "Field Injection — @Autowired em campo em vez de constructor injection",
+      "severity": "P1",
+      "freq": 5
+    },
+    {
+      "id": "AP-2",
+      "file": "shared/anti-patterns.md",
+      "role": ["reviewer", "implementer"],
+      "framework": ["spring"],
+      "layer": ["service", "repository"],
+      "issue_type": ["performance"],
+      "pattern": "findAll sem Pageable — List<T> sem paginação",
+      "severity": "P1",
+      "freq": 4
+    },
+    {
+      "id": "AP-3",
+      "file": "shared/anti-patterns.md",
+      "role": ["reviewer", "implementer"],
+      "framework": ["spring", "quarkus"],
+      "layer": ["service", "controller", "resource"],
+      "issue_type": ["error-handling"],
+      "pattern": "Catch genérico — catch (Exception e) sem contexto",
+      "severity": "P1",
+      "freq": 6
+    },
+    {
+      "id": "AP-4",
+      "file": "shared/anti-patterns.md",
+      "role": ["reviewer", "implementer"],
+      "framework": ["spring"],
+      "layer": ["repository", "service"],
+      "issue_type": ["performance"],
+      "pattern": "N+1 em relacionamento JPA — acesso a lazy em loop",
+      "severity": "P0",
+      "freq": 3
+    },
+    {
+      "id": "AP-5",
+      "file": "shared/anti-patterns.md",
+      "role": ["reviewer", "implementer"],
+      "framework": ["quarkus"],
+      "layer": ["service"],
+      "issue_type": ["architecture"],
+      "pattern": "@Singleton sem CDI proxy — usar @ApplicationScoped",
+      "severity": "P1",
+      "freq": 3
+    },
+    {
+      "id": "AP-6",
+      "file": "shared/anti-patterns.md",
+      "role": ["reviewer", "implementer"],
+      "framework": ["quarkus"],
+      "layer": ["resource", "service"],
+      "issue_type": ["performance"],
+      "pattern": "Blocking no event loop — operação blocking em endpoint reactive",
+      "severity": "P0",
+      "freq": 3
+    },
+    {
+      "id": "AP-7",
+      "file": "shared/anti-patterns.md",
+      "role": ["reviewer", "implementer"],
+      "framework": ["quarkus"],
+      "layer": ["repository", "service"],
+      "issue_type": ["transaction"],
+      "pattern": "persist sem @Transactional — escrita sem anotação transacional",
+      "severity": "P0",
+      "freq": 4
+    },
+    {
+      "id": "AP-8",
+      "file": "shared/anti-patterns.md",
+      "role": ["reviewer", "implementer"],
+      "framework": ["angular"],
+      "layer": ["component", "service"],
+      "issue_type": ["reactivity"],
+      "pattern": "Subscribe sem cleanup — subscrição manual sem destroy",
+      "severity": "P1",
+      "freq": 5
+    },
+    {
+      "id": "AP-9",
+      "file": "shared/anti-patterns.md",
+      "role": ["reviewer", "implementer"],
+      "framework": ["angular"],
+      "layer": ["component", "service", "api"],
+      "issue_type": ["naming"],
+      "pattern": "Uso de any — tipagem com any em vez de tipo específico",
+      "severity": "P1",
+      "freq": 4
+    },
+    {
+      "id": "AP-10",
+      "file": "shared/anti-patterns.md",
+      "role": ["reviewer", "implementer"],
+      "framework": ["angular"],
+      "layer": ["component"],
+      "issue_type": ["architecture"],
+      "pattern": "DOM direto — manipulação de DOM sem binding do Angular",
+      "severity": "P1",
+      "freq": 3
+    }
+  ]
 }
