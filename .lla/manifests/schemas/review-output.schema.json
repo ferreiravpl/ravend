@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "review-output",
+  "description": "Schema para output estruturado do agente Reviewer",
+  "type": "object",
+  "required": ["review_status", "score", "findings", "iteration"],
+  "properties": {
+    "review_status": {
+      "type": "string",
+      "enum": ["APPROVED", "REJECTED"],
+      "description": "Resultado geral da revisão"
+    },
+    "score": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Score numérico (≥95 e sem P0/P1 = aprovado)"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "file", "description", "action"],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["P0", "P1", "P2"],
+            "description": "Severidade do finding"
+          },
+          "file": {
+            "type": "string",
+            "description": "Arquivo afetado"
+          },
+          "line": {
+            "type": ["integer", "null"],
+            "description": "Linha aproximada"
+          },
+          "description": {
+            "type": "string",
+            "description": "Descrição do finding"
+          },
+          "action": {
+            "type": "string",
+            "description": "Ação obrigatória de correção (P0/P1) ou sugestão (P2)"
+          },
+          "anti_pattern_id": {
+            "type": ["string", "null"],
+            "description": "ID do anti-pattern se existente no knowledge (ex: AP-1)"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "summary": {
+      "type": "string",
+      "description": "Resumo geral da review em 2-3 frases"
+    },
+    "anti_patterns_to_register": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["pattern", "stack", "severity", "correction"],
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "minLength": 10,
+            "description": "Descrição do anti-pattern detectado (mín. 10 chars)"
+          },
+          "stack": {
+            "type": "string",
+            "enum": ["spring", "quarkus", "angular", "java-generic"],
+            "description": "Stack onde o anti-pattern se aplica"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["P0", "P1", "P2"],
+            "description": "Severidade do anti-pattern"
+          },
+          "correction": {
+            "type": "string",
+            "minLength": 10,
+            "description": "Correção recomendada (mín. 10 chars)"
+          },
+          "example": {
+            "type": "string",
+            "description": "Exemplo de código violador (opcional)"
+          }
+        },
+        "additionalProperties": false
+      },
+      "description": "Novos anti-patterns detectados para registro no knowledge base"
+    },
+    "iteration": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Número da iteração atual de review"
+    },
+    "score_delta": {
+      "type": ["integer", "null"],
+      "description": "Diferença de score em relação à iteração anterior (null se primeira iteração)"
+    }
+  },
+  "additionalProperties": false
+}

@@ -24,7 +24,8 @@
     "artifacts": { "type": "array", "items": { "type": "string" } },
     "constraints": { "type": "array", "items": { "type": "string" } },
     "done_definition": { "type": "array", "items": { "type": "string" } },
-    "knowledge_refs": { "type": "array", "items": { "type": "string" } }
+    "knowledge_refs": { "type": "array", "items": { "type": "string" } },
+    "artifact_verified": { "type": "boolean", "description": "Confirma que o agente verificou persistência dos artefatos em disco antes do handoff" }
   },
   "additionalProperties": false
 }

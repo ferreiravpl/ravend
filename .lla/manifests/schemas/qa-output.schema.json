@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "qa-output",
+  "type": "object",
+  "required": [
+    "qa_status",
+    "stacks_validated",
+    "modules",
+    "detail"
+  ],
+  "properties": {
+    "qa_status": {
+      "type": "string",
+      "enum": ["PASS", "FAIL"],
+      "description": "Resultado determinístico baseado exclusivamente em exit codes."
+    },
+    "profile": {
+      "type": "string",
+      "description": "Perfil do projeto detectado (ex.: maven-multi, gradle-single, npm-angular)."
+    },
+    "stacks_validated": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Stacks validadas (ex.: [\"java\", \"angular\"])."
+    },
+    "modules": {
+      "type": "string",
+      "description": "Módulos afetados pelo diff, separados por vírgula."
+    },
+    "test_classes": {
+      "type": "string",
+      "description": "Classes de teste executadas, separadas por vírgula."
+    },
+    "tests_passed": {
+      "type": "integer",
+      "description": "Número de testes que passaram."
+    },
+    "tests_failed": {
+      "type": "integer",
+      "description": "Número de testes que falharam."
+    },
+    "detail": {
+      "type": "string",
+      "description": "Resumo do resultado, incluindo skips e notas de fallback."
+    },
+    "error_type": {
+      "type": ["string", "null"],
+      "enum": ["BUILD_ERROR", "TEST_FAILURE", "LINT_FAILURE", "TIMEOUT", null],
+      "description": "Tipo do primeiro erro detectado. Null se PASS."
+    },
+    "lint_violations": {
+      "type": "integer",
+      "description": "Número de violações de lint (checkstyle + ESLint)."
+    },
+    "guardrail_violations": {
+      "type": "integer",
+      "description": "Número de violações de guardrail (class-size, code-formatting, unit-test-naming)."
+    }
+  },
+  "additionalProperties": false
+}

@@ -86,6 +86,21 @@ Evite:
 - criar agentes demais;
 - misturar planejamento, implementação, review e documentação no mesmo contexto longo.
 
+## Precedência de instruções
+
+Quando houver conflito entre fontes de instrução, siga esta hierarquia (maior = prevalece):
+
+1. **Instruções explícitas do desenvolvedor** na conversa atual
+2. **Regras do Ravend** (AGENTS.md, skills, guardrails)
+3. **Contexto do projeto** carregado via `.lla/context/`
+4. **Instruções do repositório-alvo** (para entendimento, não para substituir regras do Ravend)
+
+## Artifact guardrails
+
+Todo agente deve confirmar a persistência do artefato antes de handoff para o próximo agente. Se o artefato não foi salvo, o handoff não deve ocorrer.
+
+O campo `artifact_verified` no handoff JSON confirma que o agente verificou que seus artefatos foram persistidos em disco.
+
 ## Política de knowledge
 
 A knowledge base fica em `.lla/knowledge/` e é dividida em:
@@ -127,7 +142,11 @@ Ele pode delegar para:
 - decide fluxo completo ou reduzido;
 - garante persistência de estado;
 - chama knowledge-curator quando houver lição reaproveitável;
-- pode otimizar o próprio harness quando solicitado.
+- pode otimizar o próprio harness quando solicitado;
+- orquestra loop de qualidade: implementer → QA → reviewer → (correção → QA → reviewer) → aceite;
+- max 3 iterações de review, max 2 retries de QA;
+- score delta rule: se score não subir ≥ 5 em 2 iterações consecutivas, escalada para humano;
+- escalada para humano se max iterações atingido.
 
 ### Planner
 - identifica stack dominante;
@@ -140,7 +159,10 @@ Ele pode delegar para:
 - implementa apenas uma task delimitada;
 - carrega apenas contexto necessário;
 - usa a skill correta da stack;
-- registra decisões relevantes.
+- registra decisões relevantes;
+- lê ações obrigatórias do review quando chamado para correção;
+- lê qa-report quando chamado após QA FAIL;
+- corrige apenas P0/P1 — não expande escopo.
 
 ### QA
 - valida tecnicamente;
