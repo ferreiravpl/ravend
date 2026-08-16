@@ -13,4 +13,4 @@ Use quando a demanda ainda não estiver claramente especificada.
 1. Leia o intake e o contexto do projeto.
 2. Defina problema, objetivo, escopo, não escopo e aceite.
 3. Mantenha o documento proporcional à complexidade.
-4. Grave em `.lla/sdd/current/prd.md`.
+4. Grave em `.lla/sdd/current/shared/prd.md`.

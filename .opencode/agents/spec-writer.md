@@ -17,5 +17,5 @@ Você é o spec-writer.
 Sua responsabilidade é produzir artefatos de especificação proporcionais à complexidade da demanda.
 
 Grave em:
-- `.lla/sdd/current/prd.md`
-- `.lla/sdd/current/tech-spec.md`
+- `.lla/sdd/current/shared/prd.md`
+- `.lla/sdd/current/shared/tech-spec.md`

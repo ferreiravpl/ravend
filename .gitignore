@@ -1,0 +1,15 @@
+# Ravend — Runtime artifacts (not versioned)
+.lla/backups/
+.lla/sdd/current/
+.lla/manifests/task-scope.json
+.lla/manifests/agent-handoff.json
+.lla/manifests/knowledge-index.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp

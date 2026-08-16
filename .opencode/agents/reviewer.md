@@ -26,7 +26,7 @@ Você não implementa correções.
 1. **Carregar skills**: `sdd-review-loop` (sempre) + skill stack-specific condicional pela stack detectada no diff (`quarkus-review`, `spring-review` ou `angular-review`).
 2. **Carregar knowledge**: `anti-patterns.md` do índice mestre (`.lla/knowledge/reviewer/`) + segmento da stack (`.lla/knowledge/reviewer/{stack}/`) quando existir.
 3. **Carregar guardrails condicionais**: `.lla/guardrails/{stack}.md` quando existir.
-4. **Ler diff e contexto**: `git diff`, `.lla/sdd/current/decisions.md` (se existir), `qa-report.md` (se existir).
+4. **Ler diff e contexto**: `git diff`, `.lla/sdd/current/{task_id}/decisions.md` (se existir), `.lla/sdd/current/{task_id}/qa-report.md` (se existir).
 5. **Analisar diff** contra TODOS os critérios das skills carregadas (baseline + stack-specific).
 6. **Classificar findings** por severidade:
    - **P0** (bloqueante): quebra corretude, contrato, segurança, teste essencial ou arquitetura crítica.
@@ -40,7 +40,9 @@ Você não implementa correções.
    - Resultado final: `max(0, score)`
 8. **Verificar anti-patterns**: cruzar findings com o índice de knowledge; registrar `anti_pattern_id` nos findings quando houver correspondência.
 9. **Produzir output JSON** conforme schema `.lla/manifests/schemas/review-output.schema.json`.
-10. **Salvar review**: `.lla/sdd/current/review_{iteration}.md` usando o template `.lla/templates/review-template.md`.
+10. **Salvar review**: `.lla/sdd/current/{task_id}/review_{iteration}.md` usando o template `.lla/templates/review-template.md`.
+
+O `task_id` é fornecido pelo orchestrator no prompt ou handoff.
 
 ## Regras de determinismo
 

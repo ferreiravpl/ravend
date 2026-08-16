@@ -26,7 +26,9 @@ Use após a spec ou quando houver plano suficiente para implementação.
      <constraints>restrições: guardrails, padrões, limites</constraints>
    </execution_prompt>
    ```
-5. Atualize `tasks.md` com execution prompts e `task-scope.json` com campos novos (inspect_first, interface_to_implement, edge_cases, tests_to_implement, constraints, complexity, depends_on, parallelizable).
+5. Atualize `.lla/sdd/current/shared/tasks.md` com execution prompts e, para cada task, crie o diretório `.lla/sdd/current/{task_id}/` com o respectivo `task-scope.json`.
+
+O `task_id` de cada task é definido pelo task-decomposer (ex.: T1, T2, ...).
 
 ## Regras
 

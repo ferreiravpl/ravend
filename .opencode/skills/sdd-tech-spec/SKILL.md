@@ -13,4 +13,4 @@ Use quando decisões técnicas importarem para a execução.
 1. Leia PRD ou intake e contexto técnico relevante.
 2. Reutilize a arquitetura existente antes de propor mudança estrutural.
 3. Defina módulos impactados, interfaces, riscos e estratégia de teste.
-4. Grave em `.lla/sdd/current/tech-spec.md`.
+4. Grave em `.lla/sdd/current/shared/tech-spec.md`.

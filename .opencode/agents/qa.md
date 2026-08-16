@@ -38,7 +38,9 @@ Você valida, não redesenha a solução.
 7. **Lint gate** — checkstyle (precedência do projeto-alvo) + ESLint se disponível.
 8. **Guardrail validators** — class-size (max 150 linhas), code-formatting (max 140 chars), unit-test-naming (snake_case).
 9. **Output JSON** — conforme schema `qa-output.schema.json`.
-10. **Salvar** — gravar `qa-report.md` em `.lla/sdd/current/`.
+10. **Salvar** — gravar `qa-report.md` em `.lla/sdd/current/{task_id}/qa-report.md`.
+
+O `task_id` é fornecido pelo orchestrator no prompt ou handoff.
 
 ## Regras de determinismo
 
@@ -53,4 +55,4 @@ Você valida, não redesenha a solução.
 
 ## Output
 
-Produza JSON conforme `.lla/manifests/schemas/qa-output.schema.json` e salve relatório em `.lla/sdd/current/qa-report.md`.
+Produza JSON conforme `.lla/manifests/schemas/qa-output.schema.json` e salve relatório em `.lla/sdd/current/{task_id}/qa-report.md`.

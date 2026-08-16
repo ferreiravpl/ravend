@@ -41,7 +41,10 @@ Considere "não alterar nada" como uma resposta válida quando isso for a melhor
 - O fluxo SDD é o padrão, não a única opção.
 - O menor fluxo seguro deve ser preferido.
 - Se já existir plano suficiente, use fast path.
-- O estado relevante deve ser persistido em `.lla/sdd/current/`.
+- O estado relevante deve ser persistido em `.lla/sdd/current/`, com isolamento por task:
+  - `.lla/sdd/current/{task_id}/` — artefatos por task (decisions, qa-report, review_N, progress, task-scope.json)
+  - `.lla/sdd/current/shared/` — artefatos compartilhados da demanda (intake, prd, tech-spec, tasks.md, acceptance.md)
+- Arquivamento de tasks concluídas vai para `~/.ravend/archive/` (fora do repo).
 - Contratos operacionais devem ficar em `.lla/manifests/`.
 - Conhecimento incremental deve ser seletivo, nunca carregado integralmente por padrão.
 - Use Markdown para raciocínio humano e JSON para contratos operacionais.

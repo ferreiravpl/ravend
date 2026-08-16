@@ -13,4 +13,4 @@ Use quando a entrada vier do usuário, de ticket ou de card de ferramenta extern
 1. Identifique a origem da demanda.
 2. Extraia objetivo, restrições e sinais de aceite.
 3. Separe fatos, hipóteses e dúvidas.
-4. Grave em `.lla/sdd/current/intake.md`.
+4. Grave em `.lla/sdd/current/shared/intake.md`.

@@ -1,3 +1,0 @@
-# Progress
-
-Status: idle
