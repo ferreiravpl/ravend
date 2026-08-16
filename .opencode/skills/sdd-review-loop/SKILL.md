@@ -16,7 +16,7 @@ Use após implementação ou após QA quando houver gate de review.
 
 1. **Carregar skills**: `sdd-review-loop` (baseline, sempre) + skill stack-specific condicional (`quarkus-review`, `spring-review`, `angular-review`) conforme stack detectada no diff.
 2. **Carregar knowledge**: índice de anti-patterns em `.lla/knowledge/reviewer/` + segmento da stack em `.lla/knowledge/reviewer/{stack}/` quando existir.
-3. **Carregar guardrails condicionais**: `.lla/guardrails/{stack}.md` quando existir.
+3. **Carregar guardrails aplicáveis**: dos arquivos `.lla/guardrails/*.guardrail.md`, carregue os que listam `reviewer` no campo `applyTo`.
 4. **Ler diff e contexto**: `git diff`, `.lla/sdd/current/{task_id}/decisions.md` (se existir), `.lla/sdd/current/{task_id}/qa-report.md` (se existir).
 5. **Analisar contra critérios**: verificar diff contra TODOS os critérios das skills carregadas (baseline + stack-specific + guardrails).
 6. **Classificar findings** por severidade (P0/P1/P2) — ver regras abaixo.
