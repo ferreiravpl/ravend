@@ -43,11 +43,29 @@
     "filesystem": {
       "enabled": true
     },
+    "playwright": {
+      "type": "local",
+      "command": ["npx", "-y", "@playwright/mcp@latest"],
+      "enabled": true
+    },
+    "context7": {
+      "type": "local",
+      "command": ["npx", "-y", "@upstash/context7-mcp"],
+      "enabled": true
+    },
+    "api-test": {
+      "type": "local",
+      "command": ["npx", "-y", "@cocaxcode/api-testing-mcp"],
+      "enabled": true
+    },
     "jira": {
       "enabled": false
     },
     "github": {
       "enabled": false
     }
+  },
+  "experimental": {
+    "mcp_timeout": 60000
   }
 }

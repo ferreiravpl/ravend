@@ -17,6 +17,8 @@ Um harness agentic para substituir prompts dispersos, tracking manual de tarefas
 
 - **QA com build real.** O agente QA não apenas sugere testes — ele executa build, compilação, testes com escopo restrito, lint gate (checkstyle + ESLint) e guardrail validators. PASS/FAIL baseado em exit codes, nunca em julgamento subjetivo. Fallback graceful quando ferramentas não estão disponíveis.
 
+- **QA backend + frontend de verdade.** Backend: build, testes unitários, lint, guardrails **e validação de API em runtime** via MCP `api-test` — sobe a aplicação, exercita os endpoints do escopo e asserta status/contrato (com import de spec OpenAPI quando disponível). Frontend: build, testes e **E2E em navegador real** via MCP Playwright com screenshot de evidência. Tudo opcional com fallback: indisponibilidade vira SKIP com nota, nunca bloqueia o gate.
+
 - **Review com score determinístico.** O reviewer produz score 0-100 com regras de dedução objetivas, classifica findings em P0 (bloqueante), P1 (deve corrigir) e P2 (opcional), e gera ações obrigatórias numeradas quando reprova. Aprovação exige score ≥ 95 e zero P0/P1.
 
 - **Loop de qualidade com convergência garantida.** O orchestrator coordena o ciclo implementer → QA → reviewer → correção → QA → reviewer com limites claros: max 3 iterações de review, max 2 retries de QA, score delta rule (+5 mínimo entre iterações) e escalada automática para humano quando o loop não converge.
@@ -52,7 +54,7 @@ intake → PRD → tech spec → decomposição → implementação → QA → r
 3. **Tech Spec** — Traduz o PRD em uma solução técnica implementável.
 4. **Decomposição** — Quebra a spec em tarefas pequenas, verificáveis e com execution prompts.
 5. **Implementação** — Executa uma tarefa por vez com skills da stack, guardrails e contexto mínimo.
-6. **QA** — Executa build real, testes com escopo restrito, lint gate e guardrail validators. PASS/FAIL por exit code.
+6. **QA** — Executa build real, testes com escopo restrito, lint gate e guardrail validators. PASS/FAIL por exit code. API runtime via `api-test` quando o diff tem backend; E2E de UI via Playwright quando tem frontend.
 7. **Review** — Avalia com score determinístico (0-100), classifica findings (P0/P1/P2), gera ações obrigatórias se reprovado.
 8. **Loop** — Itera até aceite (score ≥ 95, zero P0/P1). Depois captura aprendizados e arquiva.
 
@@ -61,6 +63,101 @@ Cada fase produz artefatos em `.lla/sdd/current/` (isolados por task em `{task_i
 ### Fast Path
 
 Nem toda mudança precisa do pipeline completo. Ravend prefere o **menor caminho seguro** — se já existe plano suficiente ou o escopo é trivial, pula direto para implementação. O fluxo SDD é o padrão, não uma camisa de força.
+
+---
+
+## Exemplo de Fluxo Completo
+
+Demanda: *"Adicionar autenticação JWT com refresh token no módulo de usuários"* (full stack: Spring + Angular). Cada fase mostra o command, as skills carregadas e o artefato gerado.
+
+### 1. Intake
+
+```
+/sdd-start Adicionar autenticação JWT com refresh token no módulo de usuários
+```
+
+| O que acontece | Skills / ferramentas |
+|---|---|
+| Agente `intake` normaliza a demanda em brief estruturado | `sdd-intake` (+ `brainstorming` se a demanda estiver ambígua) |
+| **Artefato:** `.lla/sdd/current/shared/intake.md` | |
+
+### 2. PRD e Tech Spec
+
+```
+/sdd-start (continua) ou /sdd-implement (fast path se o escopo já estiver claro)
+```
+
+| O que acontece | Skills / ferramentas |
+|---|---|
+| `spec-writer` produz PRD proporcional à complexidade e traduz em solução técnica | `sdd-prd`, `sdd-tech-spec` |
+| **Artefatos:** `shared/prd.md`, `shared/tech-spec.md` | |
+
+### 3. Decomposição
+
+| O que acontece | Skills / ferramentas |
+|---|---|
+| `stack-routing` detecta full stack (spring + angular); `planner` seleciona as skills certas; `task-decomposer` quebra em tasks pequenas com execution prompts | `sdd-task-decomposition`, `stack-routing`, `writing-plans` |
+| **Artefatos:** `shared/tasks.md`, `manifests/task-scope.json` (com `inspect_first`, `interface_to_implement`, `edge_cases`, `tests_to_implement`) | |
+
+### 4. Implementação (task por task)
+
+```
+/sdd-implement task_01
+```
+
+| O que acontece | Skills / ferramentas |
+|---|---|
+| `implementer` implementa uma task delimitada com skills da stack e guardrails; registra decisões | `sdd-implementation`, `spring-implementation`, guardrails (`minimal-change`, `class-size`, `code-formatting`, `unit-test-naming`), `test-driven-development`, `context7` (docs de libs se necessário) |
+| **Artefatos:** `{task_id}/decisions.md`, código no repo | |
+
+### 5. QA completo (backend + frontend)
+
+```
+/sdd-qa task_01
+```
+
+| O que acontece | Skills / ferramentas |
+|---|---|
+| **Backend:** build real (`mvn compile`), testes com escopo restrito (`mvn test`), lint gate (checkstyle), guardrail validators — PASS/FAIL por exit code | `sdd-qa-verification` |
+| **API runtime:** sobe o backend, detecta spec em `/v3/api-docs`, exercita `POST /auth/login` (sucesso + erro) e asserta status/contrato | `qa-api-testing` + MCP `api-test` |
+| **Frontend:** build (`npm run build`), testes, lint (ESLint) | `sdd-qa-verification` |
+| **E2E:** navega no fluxo de login, interage, asserta e salva screenshot como evidência | `qa-e2e-playwright` + MCP `playwright` |
+| **Artefatos:** `{task_id}/qa-report.md`, `{task_id}/api-*.json`, `{task_id}/e2e-*.png` | |
+
+Se o QA falhar com bug real: `systematic-debugging` para investigar a causa raiz antes de corrigir.
+
+### 6. Review com loop de convergência
+
+```
+/sdd-review task_01
+```
+
+| O que acontece | Skills / ferramentas |
+|---|---|
+| `reviewer` avalia com score determinístico 0-100, findings P0/P1/P2, cruza com anti-patterns do knowledge e gera ações obrigatórias se reprovado | `sdd-review-loop`, `spring-review`, `angular-review`, knowledge (`anti-patterns.md`), guardrails, `requesting-code-review` / `receiving-code-review` |
+| **Artefato:** `{task_id}/review_1.md` + output JSON | |
+
+Se **REJECTED** (score < 95 ou P0/P1), o loop roda até convergir:
+
+```
+/sdd-implement task_01   # corrige apenas P0/P1 listados
+/sdd-qa task_01
+/sdd-review task_01      # iteração 2 — score deve subir ≥ 5 (score delta rule)
+```
+
+Limites: max 3 iterações de review, max 2 retries de QA. Sem convergência → escalada para humano.
+
+### 7. Aceite
+
+```
+/sdd-accept
+```
+
+| O que acontece | Skills / ferramentas |
+|---|---|
+| Consolida aceite, gera `session.md` com métricas (score final, iterações, artefatos) e arquiva em `~/.ravend/archive/` | — |
+
+**Artefato final:** `~/.ravend/archive/{date}_{task_id}-{slug}/session.md`
 
 ---
 
@@ -143,7 +240,7 @@ Ravend delega para agentes especializados, cada um com papel claro:
 | [`planner`](./.opencode/agents/planner.md) | Identifica stack dominante, seleciona skills, evita planos inflados |
 | [`task-decomposer`](./.opencode/agents/task-decomposer.md) | Quebra specs em tarefas pequenas com execution prompts |
 | [`implementer`](./.opencode/agents/implementer.md) | Implementa uma tarefa delimitada com skills da stack; corrige P0/P1 do review |
-| [`qa`](./.opencode/agents/qa.md) | Executa build real, testes, lint gate e guardrail validators; PASS/FAIL por exit code |
+| [`qa`](./.opencode/agents/qa.md) | Executa build real, testes, lint gate, guardrail validators; valida API em runtime (backend) e E2E de UI (frontend) |
 | [`reviewer`](./.opencode/agents/reviewer.md) | Revisa com score determinístico, findings P0/P1/P2 e output JSON estruturado |
 | [`knowledge-curator`](./.opencode/agents/knowledge-curator.md) | Destila findings recorrentes em entradas compactas, indexadas e segmentadas por stack |
 
@@ -163,6 +260,8 @@ Skills são carregadas sob demanda — nunca todas de uma vez. Elas fornecem pro
 | `sdd-task-decomposition` | Quebra spec em tarefas com critérios de aceite e execution prompts |
 | `sdd-implementation` | Guia a implementação de uma tarefa com execution prompt, guardrails e knowledge |
 | `sdd-qa-verification` | Executa build real, testes, lint gate e guardrail validators com output JSON |
+| `qa-e2e-playwright` | Valida fluxos de UI em navegador real via MCP Playwright (gate E2E opcional) |
+| `qa-api-testing` | Valida contratos de API em runtime via MCP `api-test` com assertions e import OpenAPI (gate backend opcional) |
 | `sdd-review-loop` | Revisa com score determinístico, findings P0/P1/P2, anti-pattern detection e output JSON |
 | `sdd-context-compaction` | Compacta estado de sessões longas em arquivos persistentes |
 | `sdd-knowledge-capture` | Converte findings recorrentes em conhecimento reutilizável com write-back segmentado |
@@ -187,6 +286,27 @@ Skills são carregadas sob demanda — nunca todas de uma vez. Elas fornecem pro
 | `ravend-self-evolution` | Guia a evolução incremental do sistema agentic Ravend |
 
 Definições completas em [`.opencode/skills/`](./.opencode/skills/).
+
+### Skills Externas (Superpowers)
+
+Skills genéricas de processo — brainstorming, writing-plans, test-driven-development, systematic-debugging, verification-before-completion e outras — são instaladas globalmente (não versionadas neste repo) via clone de [`obra/superpowers`](https://github.com/obra/superpowers) em `~/.config/opencode/superpowers/`, registradas no config global do OpenCode (`skills.paths`). Ficam disponíveis em qualquer projeto e são atualizadas com `git pull`.
+
+---
+
+## Integrações (MCP)
+
+Servidores MCP configurados em `opencode.json`:
+
+| MCP | Status | Uso |
+|---|---|---|
+| `filesystem` | enabled | Acesso a arquivos do workspace |
+| `playwright` | enabled | Navegador real para testes E2E de UI (QA) |
+| `api-test` | enabled | Testes de API REST em runtime com assertions e import OpenAPI (QA) |
+| `context7` | enabled | Documentação atualizada de bibliotecas via MCP |
+| `jira` | disabled | Requer credenciais e configuração manual para habilitar |
+| `github` | disabled | Requer credenciais e configuração manual para habilitar |
+
+Context7 fica disponível para qualquer agente consultar docs de libs durante planejamento e implementação. Playwright é usado pela skill `qa-e2e-playwright` quando o diff contém frontend; `api-test` pela skill `qa-api-testing` quando o diff contém backend.
 
 ---
 
@@ -232,10 +352,9 @@ Catálogo completo em [`knowledge-index.json`](./.lla/manifests/knowledge-index.
 ```
 .
 ├── AGENTS.md                    # Identidade e regras globais do Ravend
-├── opencode.json                # Configuração do OpenCode para o repo
+├── opencode.json                # Configuração do OpenCode (agentes, MCPs: filesystem/playwright/context7, permissions)
 ├── .opencode/
 │   ├── agents/                  # Definições de agentes
-│   │   └── context/             # System prompts estáticos (prompt caching)
 │   ├── skills/                  # Definições de skills (SDD, por stack, meta)
 │   └── commands/                # Portas de entrada de commands CLI
 ├── .lla/
@@ -260,6 +379,8 @@ Catálogo completo em [`knowledge-index.json`](./.lla/manifests/knowledge-index.
 │   │   └── shared/              # Índice mestre de anti-patterns
 │   └── templates/               # Templates de PRD, tech spec, task, review, session, knowledge
 ```
+
+Skills externas (Superpowers) vivem fora do repo, em `~/.config/opencode/superpowers/` — ver seção Skills Externas.
 
 ---
 
