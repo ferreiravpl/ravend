@@ -38,7 +38,17 @@ Quando chamado após QA FAIL:
 2. Corrija APENAS o que causou a falha (build error, test failure, lint violation)
 3. Não refatore código adjacente
 
-Regras:
+## Guardrails
+
+Guardrails aplicáveis conforme `.lla/guardrails/`:
+
+- `minimal-change` (P0): não expandir escopo da task
+- `class-size` (P1): max 150 linhas por classe
+- `code-formatting` (P1): max 140 chars por linha
+- `unit-test-naming` (P1): snake_case `should_X_when_Y`
+
+## Regras
+
 - siga o padrão dominante da codebase;
 - não expanda escopo;
 - não redesenhe arquitetura sem necessidade explícita;

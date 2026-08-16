@@ -53,6 +53,12 @@ O `task_id` é fornecido pelo orchestrator no prompt ou handoff.
 - Se ferramenta indisponível (ex.: checkstyle não instalado, ESLint ausente), skip com nota no detail e `lint_violations: 0`.
 - Nunca falhe por falta de ferramenta opcional.
 
+## Thresholds de guardrail
+
+- Classe: max 150 linhas (excl. package/import/blank)
+- Linha: max 140 chars
+- Teste: snake_case `should_X_when_Y`
+
 ## Output
 
 Produza JSON conforme `.lla/manifests/schemas/qa-output.schema.json` e salve relatório em `.lla/sdd/current/{task_id}/qa-report.md`.
