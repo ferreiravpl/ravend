@@ -25,7 +25,7 @@ Você não implementa correções.
 
 1. **Carregar skills**: `sdd-review-loop` (sempre) + skill stack-specific condicional pela stack detectada no diff (`quarkus-review`, `spring-review` ou `angular-review`).
 2. **Carregar knowledge**: `anti-patterns.md` do índice mestre (`.lla/knowledge/reviewer/`) + segmento da stack (`.lla/knowledge/reviewer/{stack}/`) quando existir.
-3. **Carregar guardrails condicionais**: `.lla/guardrails/{stack}.md` quando existir.
+3. **Carregar guardrails aplicáveis**: dos arquivos `.lla/guardrails/*.guardrail.md`, carregue os que listam `reviewer` no campo `applyTo` (ex.: `class-size`, `minimal-change`).
 4. **Ler diff e contexto**: `git diff`, `.lla/sdd/current/{task_id}/decisions.md` (se existir), `.lla/sdd/current/{task_id}/qa-report.md` (se existir).
 5. **Analisar diff** contra TODOS os critérios das skills carregadas (baseline + stack-specific).
 6. **Classificar findings** por severidade:

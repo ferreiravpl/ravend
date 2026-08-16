@@ -120,7 +120,25 @@ done
 Conte violações e registre em `guardrail_violations`.
 Se `guardrail_violations > 0`, `qa_status = FAIL` e `error_type = LINT_FAILURE`.
 
-### Step 8 — Output e relatório
+### Step 8 — API runtime opcional (backend no diff)
+
+Apenas se o diff contém backend (controllers/resources/services expostos) e o MCP `api-test` está disponível.
+
+1. Carregue a skill `qa-api-testing` e siga o procedimento dela.
+2. Suba a aplicação, exercite os endpoints do escopo da task (sucesso + erro) e assertar status/contrato.
+3. Resultado: `api-testing: PASS/FAIL/SKIP` registrado no `qa-report.md`, evidência em `{task_id}/api-*.json`.
+4. Se a aplicação não subir ou o MCP falhar após 1 tentativa, `SKIP` com nota no `detail` — nunca falhe o QA por indisponibilidade de API runtime.
+
+### Step 9 — E2E opcional (UI no diff)
+
+Apenas se o diff contém frontend/UI e o MCP `playwright` está disponível.
+
+1. Carregue a skill `qa-e2e-playwright` e siga o procedimento dela.
+2. Valide o fluxo principal da task no navegador (navegar, interagir, assertar, screenshot de evidência).
+3. Resultado: `e2e-playwright: PASS/FAIL/SKIP` registrado no `qa-report.md`.
+4. Se o browser não iniciar ou o MCP falhar após 1 tentativa, `SKIP` com nota no `detail` — nunca falhe o QA por indisponibilidade de E2E.
+
+### Step 10 — Output e relatório
 
 1. Monte o output JSON conforme `.lla/manifests/schemas/qa-output.schema.json`.
 2. Salve relatório em `.lla/sdd/current/{task_id}/qa-report.md` com:

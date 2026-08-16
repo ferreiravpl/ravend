@@ -24,13 +24,14 @@
     "title": { "type": "string" },
     "status": { "type": "string" },
     "source": {
-      "type": "object",
+      "type": ["object", "null"],
       "required": ["jira_key", "issue_url"],
       "properties": {
         "jira_key": { "type": "string" },
         "issue_url": { "type": "string" }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "description": "Origem da task. Null quando não há integração com issue tracker (ex.: demanda textual via /sdd-start)."
     },
     "labels": { "type": "array", "items": { "type": "string" } },
     "stack_tags": { "type": "array", "items": { "type": "string" } },
