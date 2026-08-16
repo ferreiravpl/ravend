@@ -70,6 +70,6 @@ Após implementação, orquestre o loop de qualidade:
 ### Escalada para humano
 
 Quando o loop não converge:
-- Documentar estado atual em `.lla/sdd/current/progress.md`
+- Documentar estado atual em `.lla/sdd/current/{task_id}/progress.md`
 - Listar ações pendentes e score atual
 - Solicitar intervenção explícita do desenvolvedor

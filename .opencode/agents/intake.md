@@ -20,4 +20,4 @@ Produza:
 - dúvidas
 - sinais de aceite
 
-Grave em `.lla/sdd/current/intake.md`.
+Grave em `.lla/sdd/current/shared/intake.md`.

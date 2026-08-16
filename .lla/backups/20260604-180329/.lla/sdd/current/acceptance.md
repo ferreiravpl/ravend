@@ -1,3 +1,0 @@
-# Aceite
-
-Nenhum aceite registrado.

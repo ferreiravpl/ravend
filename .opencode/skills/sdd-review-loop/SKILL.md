@@ -17,13 +17,15 @@ Use após implementação ou após QA quando houver gate de review.
 1. **Carregar skills**: `sdd-review-loop` (baseline, sempre) + skill stack-specific condicional (`quarkus-review`, `spring-review`, `angular-review`) conforme stack detectada no diff.
 2. **Carregar knowledge**: índice de anti-patterns em `.lla/knowledge/reviewer/` + segmento da stack em `.lla/knowledge/reviewer/{stack}/` quando existir.
 3. **Carregar guardrails condicionais**: `.lla/guardrails/{stack}.md` quando existir.
-4. **Ler diff e contexto**: `git diff`, `.lla/sdd/current/decisions.md` (se existir), `.lla/sdd/current/qa-report.md` (se existir).
+4. **Ler diff e contexto**: `git diff`, `.lla/sdd/current/{task_id}/decisions.md` (se existir), `.lla/sdd/current/{task_id}/qa-report.md` (se existir).
 5. **Analisar contra critérios**: verificar diff contra TODOS os critérios das skills carregadas (baseline + stack-specific + guardrails).
 6. **Classificar findings** por severidade (P0/P1/P2) — ver regras abaixo.
 7. **Calcular score** — ver regras de dedução abaixo.
 8. **Verificar anti-patterns**: cruzar findings com o índice de knowledge; registrar `anti_pattern_id` nos findings quando houver correspondência.
 9. **Produzir output JSON** conforme `.lla/manifests/schemas/review-output.schema.json`.
-10. **Salvar review**: `.lla/sdd/current/review_{iteration}.md` usando template `.lla/templates/review-template.md`.
+10. **Salvar review**: `.lla/sdd/current/{task_id}/review_{iteration}.md` usando template `.lla/templates/review-template.md`.
+
+O `task_id` é fornecido pelo orchestrator no prompt ou handoff.
 11. **Sinalizar aprendizado reutilizável**: preencher `anti_patterns_to_register` no output quando detectar padrão recorrente sem entrada no knowledge.
 
 ## Score Deduction Rules

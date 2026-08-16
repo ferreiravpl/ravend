@@ -29,7 +29,7 @@ Um harness agentic para substituir prompts dispersos, tracking manual de tarefas
 
 - **Minimalismo de contexto.** Sem despejar o repositório inteiro. Ravend carrega apenas o contexto necessário para a fase e tarefa atual, persiste estado em arquivos e compacta sessões longas automaticamente. Resultado: menor custo de tokens, execução mais rápida e menos risco de alucinação.
 
-- **Estado persistente, fluxos retomáveis.** Cada execução SDD persiste seu estado em [`.lla/sdd/current/`](./.lla/sdd/current/). Interrompa um fluxo, feche sua sessão e retome exatamente de onde parou com `/sdd-resume`. Sem contexto perdido, sem trabalho repetido.
+- **Estado persistente, fluxos retomáveis.** Cada execução SDD persiste seu estado em `.lla/sdd/current/`, com isolamento por task: artefatos por task em `{task_id}/`, artefatos compartilhados da demanda em `shared/`. Tasks concluídas são arquivadas em `~/.ravend/archive/` (fora do repo). Interrompa um fluxo, feche sua sessão e retome exatamente de onde parou com `/sdd-resume`. Sem contexto perdido, sem trabalho repetido.
 
 - **Harness auto-otimizável.** Ravend pode auditar e evoluir sua própria configuração — agentes, skills, commands, arquivos de contexto e economia de tokens. Execute `/ravend-optimize` para uma análise crítica, ou `/ravend-evolve` para propor e executar melhorias incrementais.
 
@@ -56,7 +56,7 @@ intake → PRD → tech spec → decomposição → implementação → QA → r
 7. **Review** — Avalia com score determinístico (0-100), classifica findings (P0/P1/P2), gera ações obrigatórias se reprovado.
 8. **Loop** — Itera até aceite (score ≥ 95, zero P0/P1). Depois captura aprendizados e arquiva.
 
-Cada fase produz artefatos em [`.lla/sdd/current/`](./.lla/sdd/current/) e contratos operacionais em [`.lla/manifests/`](./.lla/manifests/).
+Cada fase produz artefatos em `.lla/sdd/current/` (isolados por task em `{task_id}/`, compartilhados em `shared/`) e contratos operacionais em [`.lla/manifests/`](./.lla/manifests/).
 
 ### Fast Path
 
@@ -97,7 +97,7 @@ Puxa o item do Jira, normaliza via intake e segue o mesmo pipeline.
 /sdd-resume
 ```
 
-Lê o estado persistido em [`.lla/sdd/current/`](./.lla/sdd/current/) e continua de onde parou.
+Lê o estado persistido em `.lla/sdd/current/` e continua de onde parou. Se houver múltiplas tasks ativas, lista e pede para escolher.
 
 ### 5. Execute uma fase específica
 
@@ -247,8 +247,10 @@ Catálogo completo em [`knowledge-index.json`](./.lla/manifests/knowledge-index.
 │   │   ├── style-policy.md      # Fonte canônica de thresholds numéricos
 │   │   ├── ravend-identity.md   # Identidade operacional do Ravend
 │   │   └── ravend-optimization.md # Princípios de auto-otimização
-│   ├── sdd/
-│   │   └── current/             # Estado do fluxo SDD ativo
+│ ├── sdd/
+│ │ └── current/ # Estado do fluxo SDD ativo
+│ │     ├── {task_id}/ # Artefatos por task (decisions, qa-report, review_N, progress, task-scope.json)
+│ │     └── shared/    # Artefatos compartilhados da demanda (intake, prd, tech-spec, tasks.md, acceptance.md)
 │   ├── manifests/               # Contratos JSON (schemas, handoffs, knowledge-index)
 │   │   └── schemas/             # Schemas de output (qa-output, review-output, task-scope, agent-handoff)
 │   ├── guardrails/              # Guardrails de código com applyTo e severidade

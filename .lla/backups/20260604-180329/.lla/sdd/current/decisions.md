@@ -1,3 +1,0 @@
-# Decisões
-
-Nenhuma decisão registrada.

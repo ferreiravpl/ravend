@@ -17,7 +17,9 @@ Use quando existir task ativa delimitada.
 4. **Carregue guardrails** condicionais da stack (`.lla/guardrails/`) antes de implementar.
 5. **Carregue knowledge** relevante (consulte `knowledge-index.json` por stack e camada).
 6. **Implemente a mudança delimitada** seguindo constraints do execution prompt.
-7. **Registre decisões** importantes em `.lla/sdd/current/decisions.md`.
+7. **Registre decisões** importantes em `.lla/sdd/current/{task_id}/decisions.md`.
+
+O `task_id` é fornecido pelo orchestrator no prompt ou handoff.
 
 ## Regras
 

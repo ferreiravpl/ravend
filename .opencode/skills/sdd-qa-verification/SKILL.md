@@ -123,7 +123,9 @@ Se `guardrail_violations > 0`, `qa_status = FAIL` e `error_type = LINT_FAILURE`.
 ### Step 8 — Output e relatório
 
 1. Monte o output JSON conforme `.lla/manifests/schemas/qa-output.schema.json`.
-2. Salve relatório em `.lla/sdd/current/qa-report.md` com:
+2. Salve relatório em `.lla/sdd/current/{task_id}/qa-report.md` com:
+
+O `task_id` é fornecido pelo orchestrator no prompt ou handoff.
    - Perfil detectado
    - Stacks validadas
    - Resultado de cada step (PASS/FAIL/SKIP)
