@@ -551,8 +551,7 @@ def local_mcp_config(root: Path) -> dict:
 
 CLI_SHIM = """#!/usr/bin/env python3
 # `ravend` terminal command, installed by `ravend.py install-cli`. Finds the installed Ravend plugin
-# (newest install, so plugin updates are picked up) and forwards: `ravend run ...` -> ravend_run.py,
-# anything else -> ravend.py (gate, status, mcp, ...).
+# (newest install, so plugin updates are picked up) and forwards every argument to scripts/ravend.py.
 import json, os, sys
 from pathlib import Path
 
@@ -573,20 +572,10 @@ def plugin_root():
     return Path(FALLBACK)
 
 
-args = sys.argv[1:]
-script = "ravend.py"
-if args[:1] == ["run"]:
-    script, args = "ravend_run.py", args[1:]
-elif args[:1] in (["help"], ["-h"], ["--help"]) or not args:
-    print("ravend run \\"<demand>\\" [options]   pipeline without supervision (ravend run --help)\\n"
-          "ravend gate fast|full [--dry-run]  quality gate of this checkout\\n"
-          "ravend status                      active specs + last gate\\n"
-          "ravend mcp                         your MCP servers · ravend integrations: the ones Ravend uses")
-    sys.exit(0)
-target = plugin_root() / "scripts" / script
+target = plugin_root() / "scripts" / "ravend.py"
 if not target.exists():
-    sys.exit(f"ravend: plugin not found ({{target}}). Reinstall with /plugin install ravend")
-os.execv(sys.executable, [sys.executable, str(target), *args])
+    sys.exit(f"ravend: plugin não encontrado ({{target}}). Reinstale com /plugin install ravend")
+os.execv(sys.executable, [sys.executable, str(target), *sys.argv[1:]])
 """
 
 
@@ -595,10 +584,10 @@ def install_cli(target_dir: Path) -> int:
     path = target_dir / "ravend"
     path.write_text(CLI_SHIM.format(fallback=str(PLUGIN_ROOT)), encoding="utf-8")
     path.chmod(0o755)
-    print(f"[ravend] installed {path}")
+    print(f"[ravend] instalado: {path}")
     on_path = any(Path(p).resolve() == target_dir.resolve() for p in os.environ.get("PATH", "").split(os.pathsep) if p)
     if not on_path:
-        print(f"[ravend] {target_dir} is not on PATH — add to your shell rc: export PATH=\"{target_dir}:$PATH\"")
+        print(f"[ravend] {target_dir} não está no PATH. Adicione ao seu .bashrc/.zshrc: export PATH=\"{target_dir}:$PATH\"")
     return 0
 
 
@@ -694,14 +683,373 @@ def status(root: Path, as_json: bool) -> int:
     if as_json:
         print(json.dumps(data, indent=2, ensure_ascii=False))
         return 0
-    print(f"project {data['project_id']} · data {d} · profile {'yes' if data['has_profile'] else 'NO'}")
+    print(f"projeto {data['project_id']} · dados {d} · perfil {'sim' if data['has_profile'] else 'NÃO (rode /ravend:init)'}")
     for s in data["specs"][:10]:
-        print(f"  spec {s['slug']} [{s['status']}/{s['tier']}] {s['done']}/{s['total']} next: {s['next'] or '-'}")
+        if s["status"] in ("done", "abandoned"):
+            continue
+        print(f"  spec {s['slug']} [{s['status']}/{s['tier']}] {s['done']}/{s['total']} tasks · "
+              f"próximo: {next_action(root, s['slug'])['message']}")
     for m, g in data["last_gate"].items():
         if g:
-            fresh = "current" if g.get("fingerprint") == data["tree"] else "stale"
-            print(f"  last gate {m}: {g['status']} at {g['at']} ({fresh})")
+            fresh = "deste código" if g.get("fingerprint") == data["tree"] else "desatualizado: o código mudou"
+            print(f"  último gate {m}: {g['status']} em {g['at']} ({fresh})")
     return 0
+
+
+# --------------------------------------------------------------------------- flow (state machine)
+# One source of truth for "what comes next", used by /ravend:continue, /ravend:start and ravend_auto.py.
+# It reads only what is on disk: the spec (status, tasks), the per-checkout gate state and the spec's
+# state.json (verify and review records, each tied to the tree fingerprint they were made on).
+# The records are written by the runtime (`task done`, `verify record`, `review record`, `spec ...`),
+# never edited by hand, so the decision cannot be thrown off by a reformatted file.
+
+TASK_RE = re.compile(r"^- \[([ xX])\] (T\d+)\b(.*)$", re.M)
+DEFAULT_MAX_FIX_ROUNDS = 2
+
+
+class FlowError(Exception):
+    """A state change that cannot be made (unknown spec/task, gate not run on this code...)."""
+
+
+def spec_file(d: Path, slug: str) -> Path:
+    return d / "specs" / slug / "spec.md"
+
+
+def _require_spec(d: Path, slug: str) -> Path:
+    path = spec_file(d, slug)
+    if not path.exists():
+        raise FlowError(f"spec não encontrada: {slug} ({path})")
+    return path
+
+
+def spec_state(d: Path, slug: str) -> dict:
+    st = load_json(d / "specs" / slug / "state.json", {}) or {}
+    st.setdefault("verify", [])
+    st.setdefault("reviews", [])
+    return st
+
+
+def _save_spec_state(d: Path, slug: str, st: dict) -> None:
+    save_json(d / "specs" / slug / "state.json", st)
+
+
+def _set_frontmatter(text: str, key: str, value: str) -> str:
+    m = re.match(r"^---\n(.*?)\n---", text, re.S)
+    if not m:
+        return text
+    lines = m.group(1).splitlines()
+    for i, line in enumerate(lines):
+        if line.split(":", 1)[0].strip() == key:
+            lines[i] = f"{key}: {value}"
+            break
+    else:
+        lines.append(f"{key}: {value}")
+    return "---\n" + "\n".join(lines) + "\n---" + text[m.end():]
+
+
+def _append_log(text: str, line: str) -> str:
+    entry = f"- {datetime.now():%Y-%m-%d} {line}"
+    if re.search(r"^## Log\s*$", text, re.M):
+        return text.rstrip("\n") + "\n" + entry + "\n"
+    return text.rstrip("\n") + "\n\n## Log\n" + entry + "\n"
+
+
+def mark_task_done(d: Path, slug: str, task: str) -> str:
+    path = _require_spec(d, slug)
+    text = path.read_text(encoding="utf-8")
+    task = task.upper()
+    hit = next((m for m in TASK_RE.finditer(text) if m.group(2) == task), None)
+    if not hit:
+        known = ", ".join(m.group(2) for m in TASK_RE.finditer(text)) or "nenhuma"
+        raise FlowError(f"task {task} não existe na spec {slug} (tasks: {known})")
+    if hit.group(1) == " ":
+        text = text[:hit.start()] + f"- [x] {task}{hit.group(3)}" + text[hit.end():]
+        text = _append_log(text, f"{task} concluída")
+        if _frontmatter(text).get("status") in ("approved", "draft"):
+            text = _set_frontmatter(text, "status", "in-progress")
+        path.write_text(text, encoding="utf-8")
+    return task
+
+
+def set_spec_status(d: Path, slug: str, status_value: str, note: str = "") -> None:
+    path = _require_spec(d, slug)
+    text = _set_frontmatter(path.read_text(encoding="utf-8"), "status", status_value)
+    path.write_text(_append_log(text, note or f"status: {status_value}"), encoding="utf-8")
+
+
+def record_verify(root: Path, slug: str, uncovered: list[str]) -> dict:
+    """Ties the verification to the code it was made on. The gate result comes from the runtime's own
+    last `gate full` of this checkout, which must have run on exactly this tree."""
+    d = data_dir(root)
+    _require_spec(d, slug)
+    tree = tree_fingerprint(root)
+    last = load_json(state_dir(root) / "last-gate-full.json")
+    if not last or not tree or last.get("fingerprint") != tree:
+        raise FlowError("o gate full não rodou neste código (ou o código mudou depois). Rode `gate full` e registre de novo.")
+    entry = {"fingerprint": tree, "gate": last.get("status"), "uncovered": [u for u in uncovered if u.strip()],
+             "at": datetime.now().isoformat(timespec="seconds")}
+    st = spec_state(d, slug)
+    if st["verify"] and st["verify"][-1].get("fingerprint") == tree:
+        st["verify"][-1] = entry  # same code verified again: replace, do not count it twice
+    else:
+        st["verify"].append(entry)
+    _save_spec_state(d, slug, st)
+    return entry
+
+
+def _verify_ok(entry: dict) -> bool:
+    return entry.get("gate") == "PASS" and not entry.get("uncovered")
+
+
+def _render_review(n: int, verdict: str, findings: list[dict], summary: str, raw: dict) -> str:
+    out = [f"# Review {n} — {verdict}", "", f"{datetime.now():%Y-%m-%d %H:%M}", ""]
+    if summary:
+        out += [summary, ""]
+    for sev in ("P0", "P1", "P2"):
+        group = [f for f in findings if f.get("severity") == sev]
+        if not group:
+            continue
+        out.append(f"## {sev}")
+        for f in group:
+            where = f"{f.get('file', '?')}:{f['line']}" if f.get("line") else f.get("file", "?")
+            parts = [f"`{where}` — **{f.get('title', '')}**"]
+            for key, label in (("scenario", "cenário"), ("action", "ação"), ("ac", "critério")):
+                if f.get(key):
+                    parts.append(f"{label}: {f[key]}")
+            out.append("- " + " — ".join(parts))
+        out.append("")
+    if not findings:
+        out += ["Nenhum finding.", ""]
+    out += ["```json", json.dumps(raw, indent=2, ensure_ascii=False), "```", ""]
+    return "\n".join(out)
+
+
+def record_review(root: Path, slug: str, raw: dict) -> dict:
+    """Stores a review and writes review-N.md. The verdict is derived, not trusted: any P0/P1 means
+    CHANGES_REQUESTED, whatever the reviewer wrote."""
+    d = data_dir(root)
+    _require_spec(d, slug)
+    findings = [f for f in (raw.get("findings") or []) if isinstance(f, dict)]
+    blocking = sorted({f"{f.get('file', '?')} — {f.get('title', '')}" for f in findings
+                       if f.get("severity") in ("P0", "P1")})
+    verdict = "CHANGES_REQUESTED" if blocking else "APPROVED"
+    tree = tree_fingerprint(root)
+    st = spec_state(d, slug)
+    same_code = st["reviews"] and st["reviews"][-1].get("fingerprint") == tree
+    n = st["reviews"][-1]["n"] if same_code else len(st["reviews"]) + 1
+    entry = {"n": n, "fingerprint": tree, "verdict": verdict, "blocking": blocking,
+             "p2": sum(1 for f in findings if f.get("severity") == "P2"),
+             "at": datetime.now().isoformat(timespec="seconds"), "raw": raw}
+    if same_code:
+        st["reviews"][-1] = entry
+    else:
+        st["reviews"].append(entry)
+    (d / "specs" / slug / f"review-{n}.md").write_text(
+        _render_review(n, verdict, findings, str(raw.get("summary") or ""), raw), encoding="utf-8")
+    _save_spec_state(d, slug, st)
+    return entry
+
+
+def _trailing(items: list, pred) -> int:
+    count = 0
+    for item in reversed(items):
+        if not pred(item):
+            break
+        count += 1
+    return count
+
+
+def _open_blocking_questions(text: str) -> list[str]:
+    m = re.search(r"^## Open questions\s*$(.*?)(?=^## |\Z)", text, re.M | re.S)
+    if not m:
+        return []
+    return [ln.strip("- ").strip() for ln in m.group(1).splitlines() if "BLOCKING" in ln.upper()]
+
+
+def _pick_spec(root: Path, d: Path) -> tuple[str | None, dict | None]:
+    active = [s for s in specs_status(d) if s["status"] not in ("done", "abandoned")]
+    if not active:
+        return None, {"action": "start", "message": "Nenhuma spec em andamento.", "command": "/ravend:start <demanda>"}
+    if len(active) == 1:
+        return active[0]["slug"], None
+    branch = git(["branch", "--show-current"], root) or ""
+    on_branch = [s for s in active
+                 if _frontmatter(_read(spec_file(d, s["slug"]))).get("branch") == branch]
+    if len(on_branch) == 1:
+        return on_branch[0]["slug"], None
+    return None, {"action": "choose", "message": "Há mais de uma spec em andamento; diga qual continuar.",
+                  "options": [{"slug": s["slug"], "title": s["title"], "status": s["status"]} for s in active],
+                  "command": "/ravend:continue <slug>"}
+
+
+def next_action(root: Path, slug: str | None = None) -> dict:
+    """What the pipeline should do next for a spec, and why. Pure function of what is on disk."""
+    d = data_dir(root)
+    if slug is None:
+        slug, early = _pick_spec(root, d)
+        if early:
+            return early
+    path = spec_file(d, slug)
+    if not path.exists():
+        return {"action": "start", "slug": slug, "message": f"A spec `{slug}` não existe.",
+                "command": "/ravend:start <demanda>"}
+    text = _read(path)
+    fm = _frontmatter(text)
+    base = {"slug": slug, "title": fm.get("title", slug), "tier": fm.get("tier", "?"), "spec_path": str(path)}
+    status_value = fm.get("status", "draft")
+    max_rounds = int(((load_profile(root) or {}).get("flow") or {}).get("max_fix_rounds", DEFAULT_MAX_FIX_ROUNDS))
+
+    def out(action: str, message: str, command: str | None = None, **extra) -> dict:
+        return {**base, "action": action, "message": message, "command": command, **extra}
+
+    if status_value == "done":
+        return out("done", "Spec concluída." + (f" PR: {fm['pr']}" if fm.get("pr") else ""))
+    if status_value == "abandoned":
+        return out("done", "Spec abandonada.")
+    if status_value == "draft":
+        questions = _open_blocking_questions(text)
+        if questions:
+            return out("answer", "A spec tem perguntas em aberto que mudam o resultado.", None, questions=questions)
+        return out("approve", f"A spec ({fm.get('tier', '?')}) espera a sua aprovação antes do build.",
+                   f"ravend spec approve {slug}")
+    tasks = TASK_RE.findall(text)
+    pending = [t for mark, t, _ in tasks if mark == " "]
+    if pending:
+        title = next(rest for mark, t, rest in tasks if t == pending[0])
+        return out("build", f"Implementar {pending[0]}{title.split(' — ')[0].rstrip()} "
+                            f"({len(tasks) - len(pending)}/{len(tasks)} prontas).",
+                   f"/ravend:build {slug}", task=pending[0])
+    tree = tree_fingerprint(root)
+    st = spec_state(d, slug)
+    verifies, reviews = st["verify"], st["reviews"]
+    last_v = verifies[-1] if verifies else None
+    if not last_v or last_v.get("fingerprint") != tree:
+        why = "Ainda não verificada." if not last_v else "O código mudou desde a última verificação."
+        return out("verify", why + " Rodar o gate full e conferir critério × teste.", f"/ravend:verify {slug}")
+    if not _verify_ok(last_v):
+        fails = _trailing(verifies, lambda e: not _verify_ok(e))
+        problem = ("gate full vermelho" if last_v.get("gate") != "PASS"
+                   else "critérios sem teste: " + "; ".join(last_v.get("uncovered", [])))
+        if fails > max_rounds:
+            return out("human", f"A verificação continua falhando depois de {max_rounds} rodadas de correção ({problem}).")
+        return out("fix", f"Corrigir: {problem} (rodada {fails} de {max_rounds}).", f"/ravend:build {slug}",
+                   fix="verify", problem=problem)
+    last_r = reviews[-1] if reviews else None
+    if not last_r or last_r.get("fingerprint") != tree:
+        return out("review", "Verificada e verde; falta o review deste código.", f"/ravend:review {slug}")
+    if last_r.get("verdict") != "APPROVED":
+        rounds = _trailing(reviews, lambda e: e.get("verdict") != "APPROVED")
+        prev = reviews[-2] if len(reviews) > 1 else None
+        repeated = bool(prev and prev.get("verdict") != "APPROVED" and prev.get("blocking") == last_r.get("blocking"))
+        review_file = str(d / "specs" / slug / f"review-{last_r['n']}.md")
+        if repeated:
+            return out("human", "O review apontou os mesmos problemas de novo; a correção não está convergindo.",
+                       None, review=review_file, blocking=last_r.get("blocking", []))
+        if rounds > max_rounds:
+            return out("human", f"O review ainda pede mudanças depois de {max_rounds} rodadas.", None,
+                       review=review_file, blocking=last_r.get("blocking", []))
+        return out("fix", f"Corrigir os {len(last_r.get('blocking', []))} problema(s) P0/P1 do review {last_r['n']} "
+                          f"(rodada {rounds} de {max_rounds}).", f"/ravend:build {slug}",
+                   fix="review", review=review_file, blocking=last_r.get("blocking", []))
+    return out("ship", "Pronta para PR: gate full verde, critérios cobertos e review aprovado neste código.",
+               f"/ravend:ship {slug}")
+
+
+def print_next(info: dict) -> None:
+    head = f"[{info['slug']}] " if info.get("slug") else ""
+    print(f"{head}{info['message']}")
+    for q in info.get("questions", []):
+        print(f"  ? {q}")
+    for b in info.get("blocking", []):
+        print(f"  ! {b}")
+    for o in info.get("options", []):
+        print(f"  - {o['slug']} [{o['status']}] {o['title']}")
+    if info.get("command"):
+        print(f"próximo: {info['command']}")
+
+
+# --------------------------------------------------------------------------- doctor
+
+def _check(name: str, ok: bool | None, detail: str, fix: str = "") -> dict:
+    return {"check": name, "status": "ok" if ok else ("warn" if ok is None else "fail"), "detail": detail, "fix": fix}
+
+
+def _plugin_version() -> str:
+    return (load_json(PLUGIN_ROOT / ".claude-plugin" / "plugin.json", {}) or {}).get("version", "?")
+
+
+def doctor(root: Path | None, probe: bool = True) -> list[dict]:
+    checks = [_check("python", sys.version_info >= (3, 8), sys.version.split()[0], "instale Python 3.8+"),
+              _check("git", bool(shutil.which("git")), shutil.which("git") or "não encontrado", "instale o git"),
+              _check("claude", bool(shutil.which("claude")), shutil.which("claude") or "não encontrado",
+                     "necessário para `ravend auto`; instale o Claude Code CLI"),
+              _check("plugin", True, f"Ravend {_plugin_version()} em {PLUGIN_ROOT}")]
+    if not root:
+        checks.append(_check("repositório", False, "fora de um repositório git", "rode dentro do repositório do projeto"))
+        return checks
+    d = data_dir(root)
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        probe_file = d / ".write-test"
+        probe_file.write_text("x")
+        probe_file.unlink()
+        checks.append(_check("dados locais", True, str(d)))
+    except OSError as exc:
+        checks.append(_check("dados locais", False, f"{d}: {exc.strerror}", "verifique permissões ou defina RAVEND_HOME"))
+    profile = load_profile(root)
+    if not profile:
+        checks.append(_check("perfil", False, "este repositório ainda não foi configurado", "rode /ravend:init"))
+    else:
+        checks.append(_check("perfil", True, str(d / "profile.json")))
+        for mode in ("fast", "full"):
+            steps = (profile.get("gate") or {}).get(mode) or []
+            if not steps:
+                checks.append(_check(f"gate {mode}", False, "nenhum passo configurado", "rode /ravend:init"))
+                continue
+            missing = []
+            for step in steps:
+                word = (step.get("run") or "").strip().split(" ")[0]
+                cwd = root / step.get("cwd", ".")
+                if word and not word.startswith("{") and not (shutil.which(word) or (cwd / word).exists()):
+                    missing.append(f"{step.get('name', 'passo')}: `{word}` não encontrado em ./{step.get('cwd', '.')}")
+            checks.append(_check(f"gate {mode}", not missing, "; ".join(missing) or f"{len(steps)} passo(s)",
+                                 "corrija o comando no profile.json ou rode /ravend:init" if missing else ""))
+        chosen = integrations(profile)
+        if chosen:
+            known = {r["name"]: r for r in mcp_servers(root, probe=probe)}
+            for role, info in chosen.items():
+                for server in info["servers"]:
+                    row = known.get(server)
+                    if not row:
+                        checks.append(_check(f"MCP {role}", False, f"`{server}` não está configurado",
+                                             "rode /ravend:init e escolha de novo"))
+                    elif probe and row.get("status") and "connect" in row["status"].lower() and "fail" not in row["status"].lower():
+                        checks.append(_check(f"MCP {role}", True, f"{server} conectado"))
+                    else:
+                        checks.append(_check(f"MCP {role}", None, f"{server}: {row.get('status') or 'status desconhecido'}",
+                                             "confira com `claude mcp list` ou reautentique o servidor"))
+        if "git" not in chosen:
+            gh = shutil.which("gh")
+            authed = gh and subprocess.run(["gh", "auth", "status"], capture_output=True).returncode == 0
+            checks.append(_check("gh", bool(authed) or None, "autenticado" if authed else
+                                 ("não autenticado" if gh else "não instalado"),
+                                 "" if authed else "necessário para abrir PRs: gh auth login"))
+    on_path = shutil.which("ravend")
+    checks.append(_check("comando ravend", bool(on_path) or None, on_path or "não instalado",
+                         "" if on_path else f"opcional: python3 {PLUGIN_ROOT}/scripts/ravend.py install-cli"))
+    return checks
+
+
+def print_doctor(checks: list[dict]) -> int:
+    marks = {"ok": " ok  ", "warn": "aviso", "fail": "ERRO "}
+    for c in checks:
+        print(f"  [{marks[c['status']]}] {c['check']}: {c['detail']}")
+        if c["fix"] and c["status"] != "ok":
+            print(f"          → {c['fix']}")
+    fails = sum(1 for c in checks if c["status"] == "fail")
+    warns = sum(1 for c in checks if c["status"] == "warn")
+    print("Tudo certo." if not fails and not warns else f"{fails} erro(s), {warns} aviso(s).")
+    return 1 if fails else 0
 
 
 # --------------------------------------------------------------------------- hooks
@@ -759,8 +1107,9 @@ def hook_session_start(inp: dict) -> int:
             out.extend(lessons[:25])
     active = [s for s in specs_status(d) if s["status"] not in ("done", "abandoned")][:3]
     for s in active:
-        out.append(f"active spec `{s['slug']}` [{s['status']}] {s['done']}/{s['total']} tasks · next: {s['next'] or '-'}"
-                   f" · {s['path']}")
+        out.append(f"active spec `{s['slug']}` [{s['status']}] {s['done']}/{s['total']} tasks · {s['path']}")
+    if active:
+        out.append("To resume, the developer runs /ravend:continue (it asks `ravend.py next` what comes next).")
     print("\n".join(out))
     return 0
 
@@ -866,11 +1215,101 @@ def hook_stop(inp: dict) -> int:
 
 # --------------------------------------------------------------------------- main
 
+HELP = """Ravend — comandos de terminal (rode dentro do repositório do projeto)
+
+  ravend auto "<demanda>" [--pr]      pipeline sem supervisão, num worktree separado (ravend auto --help)
+  ravend next [<slug>]                qual é o próximo passo de uma spec e por quê
+  ravend status                       specs em andamento e último gate
+  ravend doctor                       confere se está tudo configurado e diz o que falta
+  ravend gate fast|full [--dry-run]   roda o quality gate desta pasta
+  ravend mcp                          seus servidores MCP
+  ravend integrations                 os MCPs escolhidos para cada papel
+
+Registro de estado (usado pelas skills; raramente à mão):
+  ravend spec approve|done|abandon <slug> [--pr <url>]
+  ravend task done <slug> <T1>
+  ravend verify record <slug> [--uncovered "AC2: ..."]...
+  ravend review record <slug> [--file review.json]   (JSON do reviewer; sem --file lê da entrada padrão)
+
+Uso interno: project, detect, app start|stop|status, arm, disarm, install-cli [--dir DIR], hook <evento>
+"""
+
+
+def _opt(rest: list[str], name: str) -> str | None:
+    return rest[rest.index(name) + 1] if name in rest and rest.index(name) + 1 < len(rest) else None
+
+
+def _flow_cli(cmd: str, rest: list[str], root: Path) -> int:
+    d = data_dir(root)
+    try:
+        if cmd == "next":
+            slug = next((a for a in rest if not a.startswith("-")), None)
+            info = next_action(root, slug)
+            if "--json" in rest:
+                print(json.dumps(info, indent=2, ensure_ascii=False))
+            else:
+                print_next(info)
+            return 0
+        sub = rest[0] if rest else ""
+        args = [a for a in rest[1:] if not a.startswith("-")]
+        if cmd == "spec" and sub in ("approve", "done", "abandon") and args:
+            status_value = {"approve": "approved", "done": "done", "abandon": "abandoned"}[sub]
+            pr = _opt(rest, "--pr")
+            set_spec_status(d, args[0], status_value, f"{status_value}" + (f" — PR {pr}" if pr else ""))
+            if pr:
+                path = spec_file(d, args[0])
+                path.write_text(_set_frontmatter(path.read_text(encoding="utf-8"), "pr", pr), encoding="utf-8")
+            print(f"[ravend] spec {args[0]}: {status_value}")
+            return 0
+        if cmd == "task" and sub == "done" and len(args) >= 2:
+            print(f"[ravend] {args[0]}: {mark_task_done(d, args[0], args[1])} concluída")
+            return 0
+        if cmd == "verify" and sub == "record" and args:
+            uncovered = [rest[i + 1] for i, a in enumerate(rest) if a == "--uncovered" and i + 1 < len(rest)]
+            args = [a for a in args if a not in uncovered]
+            entry = record_verify(root, args[0], uncovered)
+            ok = _verify_ok(entry)
+            print(f"[ravend] verificação registrada: gate {entry['gate']}"
+                  + (f", {len(entry['uncovered'])} critério(s) sem teste" if entry["uncovered"] else "")
+                  + (" — ok" if ok else ""))
+            return 0
+        if cmd == "review" and sub == "record" and args:
+            source = _opt(rest, "--file")
+            args = [a for a in args if a != source]
+            if source:
+                try:
+                    Path(source).resolve().relative_to(root.resolve())
+                    raise FlowError("o arquivo do review está dentro do repositório e muda o código que está sendo "
+                                    "registrado; passe o JSON pela entrada padrão (heredoc) ou por um arquivo fora do repo")
+                except ValueError:
+                    pass
+            raw_text = Path(source).read_text(encoding="utf-8") if source else sys.stdin.read()
+            match = re.search(r"\{.*\}", raw_text, re.S)
+            if not match:
+                raise FlowError("nenhum JSON de review encontrado na entrada")
+            entry = record_review(root, args[0], json.loads(match.group(0)))
+            print(f"[ravend] review {entry['n']} registrado: {entry['verdict']}"
+                  f" ({len(entry['blocking'])} P0/P1, {entry['p2']} P2) → "
+                  f"{d / 'specs' / args[0] / ('review-%d.md' % entry['n'])}")
+            return 0
+    except FlowError as exc:
+        print(f"[ravend] {exc}", file=sys.stderr)
+        return 2
+    except (OSError, ValueError) as exc:
+        print(f"[ravend] não foi possível registrar: {exc}", file=sys.stderr)
+        return 2
+    print(HELP)
+    return 2
+
+
 def main(argv: list[str]) -> int:
-    if not argv:
-        print(__doc__)
+    if not argv or argv[0] in ("help", "-h", "--help"):
+        print(HELP)
         return 0
     cmd, rest = argv[0], argv[1:]
+    if cmd == "auto":
+        runner = PLUGIN_ROOT / "scripts" / "ravend_auto.py"
+        os.execv(sys.executable, [sys.executable, str(runner), *rest])
     if cmd == "hook":
         inp = _hook_input()
         handler = {"session-start": hook_session_start, "pre-edit": hook_pre_edit,
@@ -882,6 +1321,8 @@ def main(argv: list[str]) -> int:
         except Exception as exc:  # a broken hook must never break the session
             print(f"[ravend] hook {rest[0]} error: {exc}", file=sys.stderr)
             return 0
+    if cmd == "doctor":
+        return print_doctor(doctor(repo_root(Path.cwd()), probe="--no-probe" not in rest))
     if cmd == "install-cli":
         target = Path(rest[rest.index("--dir") + 1]).expanduser() if "--dir" in rest else Path.home() / ".local" / "bin"
         return install_cli(target)
@@ -946,7 +1387,9 @@ def main(argv: list[str]) -> int:
         return 0
     if cmd == "status":
         return status(root, "--json" in rest)
-    print(__doc__)
+    if cmd in ("next", "spec", "task", "verify", "review"):
+        return _flow_cli(cmd, rest, root)
+    print(HELP)
     return 2
 
 

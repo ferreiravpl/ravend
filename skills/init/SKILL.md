@@ -1,7 +1,6 @@
 ---
 name: init
-description: Set up Ravend for the current repository on this developer's machine — detect stacks, build the local gate profile (build/test/lint/format/app/E2E commands), write project notes, let the developer pick which of their own MCP servers each pipeline stage uses, and optionally install the `ravend` terminal command. Nothing is written into the repository.
-argument-hint: [--refresh | --integrations]
+description: "Configura o Ravend neste repositório, na sua máquina — descobre os comandos de build, teste e lint, monta o quality gate, escreve notas do projeto, pergunta quais dos seus MCPs usar em cada etapa e oferece o comando `ravend` no terminal. Nada é gravado no repositório. Rode de novo para refazer qualquer parte."
 disable-model-invocation: true
 ---
 
@@ -13,7 +12,7 @@ Everything this skill writes goes to `<data_dir>` (`~/.ravend/projects/<project-
 `RV="python3 $RAVEND_ROOT/scripts/ravend.py"` (empty `RAVEND_ROOT` → this skill's base dir + `/../../scripts/ravend.py`).
 - `$RV project` → `data_dir`, `has_profile`, `base_branch`.
 - `$RV detect` → modules, stacks, build tools, test runners, lint/format signals, compose files.
-- Existing profile and no `--refresh` → show it and ask what to change. `--integrations` → only step 6.
+- Existing profile → show a short summary and ask which parts to redo (AskUserQuestion, multiSelect): gate commands (steps 2–4), project notes (5), MCP integrations (6), terminal command (7). Run only those.
 
 ## 2. Confirm commands (read, don't guess)
 For each module read only: the build file sections that matter (plugins: surefire/failsafe, spotless, checkstyle, jacoco, pitest; or package.json `scripts`), CI config if present (`.github/workflows/*.yml` — the commands CI runs are the best source of truth), README "how to run/test". Check wrappers (`./mvnw`, `./gradlew`) and the package manager lockfile.
@@ -42,8 +41,8 @@ The pipeline adapts to the tools this developer already has; install or change n
 4. **Save** in `profile.json`: `"integrations": {"<role>": ["<exact server name as listed by $RV mcp>"]}` (omit unchosen roles). A server that is currently failing may be chosen — mention it. From then on the session start lists them, each stage uses its roles, and the headless runner allows their tools only in those stages. New MCP servers take effect in the next session.
 
 ## 7. Terminal command (ask)
-Offer `$RV install-cli`: installs `ravend` in `~/.local/bin` (outside the repo, follows plugin updates) so the developer can run `ravend run "<demand>"` (unattended pipeline), `ravend gate full`, `ravend status`. If the output says the dir is not on PATH, show the line to add.
+Offer `$RV install-cli`: installs `ravend` in `~/.local/bin` (outside the repo, follows plugin updates) so the developer can run `ravend auto "<demanda>"` (unattended pipeline), `ravend next`, `ravend doctor`, `ravend gate full`. If the output says the dir is not on PATH, show the line to add.
 Suggest the `superpowers` plugin (brainstorming, systematic debugging, TDD discipline) if not installed.
 
 ## Output
-Summary: project id, data dir, stacks, gate fast/full steps (one line each), baseline result, integrations (role → server), recommendations. Next: `/ravend:run <demand>`.
+Summary: project id, data dir, stacks, gate fast/full steps (one line each), baseline result, integrations (role → server), recommendations. Then run `$RV doctor` and show anything still missing. Next: `/ravend:start <demanda>`.

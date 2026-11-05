@@ -1,7 +1,7 @@
 ---
 name: ship
-description: Open the pull request for a reviewed Ravend spec — verifies the gate is green for the current tree and the latest review is approved, pushes the branch and creates the PR with acceptance criteria, test evidence and review verdict. Use when the user asks to ship, open a PR, or finish a spec.
-argument-hint: <slug> [--yes] [--headless]
+description: "Abre o pull request — só quando o gate completo está verde neste código e o review foi aprovado. Faz o push e cria o PR com os critérios de aceite, o teste que prova cada um, o resultado do gate e o veredito do review. Sempre pede sua confirmação antes."
+argument-hint: "<slug>"
 ---
 
 # Ravend · ship
@@ -11,9 +11,9 @@ argument-hint: <slug> [--yes] [--headless]
 Pushing and opening a PR is visible to the team: confirm with the user first unless `--yes` was given.
 
 ## 1. Preconditions (stop and report if any fails)
-- `python3 "$RAVEND_ROOT/scripts/ravend.py" status --json` (fallback path: this skill's base dir + `/../../scripts/ravend.py`):
-  - `last_gate.full.status == "PASS"` **and** its `fingerprint == tree` (gate ran on exactly this code). Otherwise run `gate full` first.
-- Newest `<data_dir>/specs/<slug>/review-N.md` is APPROVED and was written after the last code change (compare with `git log -1 --format=%cI`).
+`RV="python3 $RAVEND_ROOT/scripts/ravend.py"` (fallback: this skill's base dir + `/../../scripts/ravend.py`).
+- With a slug: `$RV next <slug> --json` must answer `ship` (gate full green, criteria covered and review approved, all on exactly this code). Anything else → report its `message` and suggest `/ravend:continue`. Do not ship around it.
+- Trivial change (no slug): `$RV status --json` → `last_gate.full.status == "PASS"` and its `fingerprint == tree`; otherwise run `gate full` first.
 - Working tree clean (commit leftovers that belong to the spec; ask about anything else).
 - `gh auth status` works, unless a `git` integration will open the PR (otherwise tell the user to run `! gh auth login`).
 
@@ -31,7 +31,7 @@ Pushing and opening a PR is visible to the team: confirm with the user first unl
 - Source is a ticket and an `issues` integration is chosen → offer to comment the PR link on it.
 
 ## 3. Close
-`python3 "$RAVEND_ROOT/scripts/ravend.py" disarm`; set spec `status: done`; append the PR URL to `## Log`.
+`$RV disarm`; with a slug, `$RV spec done <slug> --pr <url>` (closes the spec and logs the PR).
 
 ## Output
 Interactive: PR URL. `--headless`: exactly one JSON object `{"pr_url": "..."}`.

@@ -1,6 +1,6 @@
 ---
 name: api-tests
-description: Write durable API/integration tests for acceptance criteria tagged [api] — HTTP contract, status codes, validation and persistence through the real stack (Spring MockMvc/RestAssured, Quarkus @QuarkusTest, Testcontainers/Dev Services, optional OpenAPI contract checks). Use when backend behavior exposed over HTTP must be proven.
+description: "Como escrever testes de API/integração duráveis para critérios [api] — contrato HTTP, status, validação e persistência pela stack real (Spring MockMvc/RestAssured, Quarkus @QuarkusTest, Testcontainers/Dev Services, contrato OpenAPI). Carregada automaticamente quando um comportamento HTTP precisa ser provado."
 ---
 
 # API tests
