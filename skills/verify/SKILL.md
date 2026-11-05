@@ -12,6 +12,7 @@ Verification is evidence, not opinion: every acceptance criterion maps to a test
 
 ## 1. Full gate
 `RV="python3 $RAVEND_ROOT/scripts/ravend.py"` (fallback: this skill's base dir + `/../../scripts/ravend.py`).
+Integrations (`$RV project` → `integrations`, roles for `verify`): `browser`, `api`, `database`, `design`, `observability`.
 Run `$RV gate full`. It runs every `gate.full` step from the local profile against the branch diff, starts the app when a step needs it, and prints only failure excerpts plus log paths. Do not re-run the same commands by hand to "double-check" — trust the gate output.
 
 ## 2. Acceptance-criteria matrix
@@ -21,8 +22,8 @@ Read `<data_dir>/specs/<slug>/spec.md`. For each AC find the test that proves it
 - **missing**.
 
 ## 3. Close gaps
-- `[unit]`/`[api]` gaps → write the test (see `ravend:api-tests` for API level), run it.
-- `[e2e]`/`[visual]` gaps → delegate to the `ravend:verifier` agent with: spec path, the AC ids, app URL/start info from the profile. It explores the UI (Playwright MCP if configured) and writes durable `@playwright/test` specs following `ravend:e2e-playwright`; browser snapshots stay in its context, not here.
+- `[unit]`/`[api]` gaps → write the test (see `ravend:api-tests` for API level), run it. The `api` integration can exercise the endpoint to learn the real contract and `database` can confirm persistence — the proof is still a test in the repo.
+- `[e2e]`/`[visual]` gaps → delegate to the `ravend:verifier` agent with: spec path, the AC ids, app URL/start info from the profile, and the `browser` (default: Playwright MCP) and `design` server names. It explores the UI with that browser MCP and writes durable `@playwright/test` specs following `ravend:e2e-playwright`; browser snapshots stay in its context, not here.
 - Never change production code in this skill. If a new test exposes a real bug, record it as failing and hand back to `/ravend:build <slug> --fix verify`.
 - Re-run `$RV gate full` after adding tests.
 

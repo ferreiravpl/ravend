@@ -3,262 +3,419 @@
 
 # Ravend
 
-**Pipeline de entrega spec-driven para o Claude Code — da demanda ao código testado, com gates de qualidade que o modelo não consegue pular.**
+**Da demanda ao PR, com testes e quality gate que o Claude não consegue pular.**
 </div>
 
-Ravend é um plugin do [Claude Code](https://claude.com/claude-code). Ele conduz uma demanda (texto, issue do Jira ou do GitHub) pelo caminho **spec → build test-first → verify → review independente → PR**. A profundidade do processo é proporcional ao tamanho da mudança. Tudo que precisa ser garantido roda em código (hooks e scripts), não em instruções de prompt.
+Ravend é um plugin do [Claude Code](https://claude.com/claude-code). Você descreve o que quer (em texto, por uma issue do Jira ou do GitHub) e ele conduz o trabalho até o PR:
 
 ```
-demanda ──▶ /ravend:spec ──▶ [você aprova]* ──▶ /ravend:build ──▶ /ravend:verify ──▶ /ravend:review ──▶ [você aprova] ──▶ /ravend:ship ──▶ PR
-              nível                              red→green→gate    gate full +         reviewer com         push + PR com
-              trivial/small/large/bug            por task, commit  critérios→testes    contexto limpo       evidências
-                                                                    E2E Playwright      P0/P1/P2
-* só para mudanças "large"
+spec ──▶ build (test-first) ──▶ verify ──▶ review ──▶ PR
 ```
+
+Na prática, você vai usar quase sempre **um único comando**:
+
+```text
+/ravend:run Adicionar paginação em GET /products
+```
+
+O Ravend escreve a spec, implementa com testes, roda os testes e o lint do projeto, faz um review independente e, **se você autorizar**, abre o PR.
 
 ---
 
 ## Sumário
-- [Instalação](#instalação)
-- [Primeiros passos](#primeiros-passos)
-- [Comandos](#comandos)
-- [Como o pipeline decide o tamanho do processo](#como-o-pipeline-decide-o-tamanho-do-processo)
-- [Onde ficam os dados (local, por desenvolvedor)](#onde-ficam-os-dados-local-por-desenvolvedor)
-- [Quality gate e hooks](#quality-gate-e-hooks)
-- [Testes: unit, API e E2E](#testes-unit-api-e-e2e)
-- [Agentes](#agentes)
-- [Modo headless / CI](#modo-headless--ci)
-- [Integrações](#integrações)
-- [Custo de contexto e desempenho](#custo-de-contexto-e-desempenho)
-- [Desenvolvendo o plugin](#desenvolvendo-o-plugin)
-- [Vindo do Ravend para OpenCode](#vindo-do-ravend-para-opencode)
-- [Limitações conhecidas](#limitações-conhecidas)
+- [Começando (5 minutos)](#começando-5-minutos)
+- [Exemplos do dia a dia](#exemplos-do-dia-a-dia)
+- [Quando o Ravend te pergunta algo](#quando-o-ravend-te-pergunta-algo)
+- [Quem decide o tamanho da demanda](#quem-decide-o-tamanho-da-demanda)
+- [Usando os seus MCPs](#usando-os-seus-mcps)
+- [Comandos, um por um](#comandos-um-por-um)
+- [Quality gate: o que é e como rodar](#quality-gate-o-que-é-e-como-rodar)
+- [Modo headless (sem você na frente)](#modo-headless-sem-você-na-frente)
+- [Referência](#referência)
 
 ---
 
-## Instalação
+## Começando (5 minutos)
 
-Requisitos: Claude Code 2.1+, `git`, **Python 3.8+** (os scripts usam só a biblioteca padrão) e `gh` autenticado, se você for usar `/ravend:ship`.
+**Requisitos:** Claude Code 2.1+, `git`, Python 3.8+ e, para abrir PRs, o `gh` autenticado (`gh auth login`).
 
+**1. Instale o plugin** (uma vez):
 ```text
 /plugin install ravend --marketplace ferreiravpl/ravend
 ```
-Ou em dois passos:
-```text
-/plugin marketplace add ferreiravpl/ravend
-/plugin install ravend@ravend
-```
-Reinicie a sessão do Claude Code depois de instalar.
+Reinicie a sessão do Claude Code depois.
 
-Recomendado: o plugin [`superpowers`](https://github.com/obra/superpowers) (`/plugin install superpowers@claude-plugins-official`). Ele cobre brainstorming, debugging sistemático e disciplina de TDD, e o Ravend aproveita essas skills quando estão presentes. O Ravend funciona sem ele.
-
-## Primeiros passos
-
-Em **cada repositório** onde você quer usar o pipeline (uma vez por máquina):
-
+**2. Configure o repositório** (uma vez por repositório, em cada máquina). Abra o Claude Code na pasta do projeto e rode:
 ```text
 /ravend:init
 ```
-O `init` detecta stacks e módulos, lê os comandos reais do projeto (build files, scripts, CI) e gera o **perfil local** com os comandos do gate. Ele também escreve notas curtas do projeto e, se você aceitar, configura os MCPs Playwright/Context7 no escopo *local*. **Nada é escrito no repositório.**
+O `init` faz três coisas, perguntando antes de cada uma:
+- lê o projeto (pom.xml, package.json, CI…) e descobre quais comandos de build, teste e lint ele usa;
+- lista os **MCPs que você já tem** e pergunta quais o Ravend deve usar em cada etapa (veja [Usando os seus MCPs](#usando-os-seus-mcps));
+- oferece instalar o comando `ravend` no terminal, usado no [modo headless](#modo-headless-sem-você-na-frente).
 
-Depois:
+**Nada é gravado no repositório**: a configuração fica em `~/.ravend/` na sua máquina.
 
+**3. Peça algo:**
 ```text
 /ravend:run Adicionar paginação em GET /products e na listagem do front
 ```
-ou etapa por etapa:
+
+Pronto. Se fechar a sessão no meio, abra outra: ela mostra as specs em andamento e você continua com o próximo comando (veja [Retomar um trabalho](#retomar-um-trabalho)).
+
+> Opcional: o plugin [`superpowers`](https://github.com/obra/superpowers) (`/plugin install superpowers@claude-plugins-official`) melhora brainstorming, debugging e disciplina de TDD. O Ravend usa as skills dele quando estão instaladas, mas funciona sem.
+
+## Exemplos do dia a dia
+
+Todos os exemplos abaixo são digitados **dentro do Claude Code**.
+
+### Uma correção pequena
 ```text
-/ravend:spec PROJ-123
-/ravend:build add-products-pagination
-/ravend:verify add-products-pagination
-/ravend:review add-products-pagination
-/ravend:ship add-products-pagination
+/ravend:run Trocar o texto do botão "Salvar" para "Salvar alterações" na tela de perfil
+```
+O Ravend percebe que é trivial: não escreve spec, faz a mudança, roda o gate e pergunta se pode abrir o PR.
+
+### Uma feature
+```text
+/ravend:run Permitir filtrar produtos por categoria na API e na tela de listagem
+```
+Ele escreve uma spec com critérios de aceite, implementa task por task (teste primeiro, depois o código), roda a suíte completa, faz o review e, no fim, pergunta se pode abrir o PR. Se a mudança for grande (vários módulos, contrato novo de API ou banco), ele **para antes de implementar** e te mostra a spec para aprovar.
+
+### Um bug
+```text
+/ravend:run Bug: o total do carrinho fica negativo quando o cupom é maior que o valor dos itens
+```
+Primeiro ele escreve um teste que reproduz o bug (e confirma que o teste falha). Só depois corrige.
+
+### A partir do Jira ou do GitHub
+```text
+/ravend:run PROJ-123
+/ravend:run #45
+/ravend:run https://github.com/minha-org/meu-repo/issues/45
+```
+Issues do GitHub são lidas pelo `gh`. Para o Jira, configure o [MCP da Atlassian](#integrações); sem ele, o Ravend pede para você colar o texto da issue.
+
+### Só planejar, sem implementar
+```text
+/ravend:spec Migrar o cadastro de clientes para o novo serviço de endereços
+```
+Gera só a spec. Leia, ajuste o arquivo se quiser e, quando estiver ok:
+```text
+/ravend:build migrar-cadastro-enderecos
 ```
 
-Para retomar depois de fechar a sessão ou dar `/clear`: o estado está na spec (checklist de tasks + log) e no git. A sessão nova mostra as specs ativas automaticamente; basta chamar o próximo comando.
+### Retomar um trabalho
+Cada spec ganha um **slug** (um nome curto como `filtro-produtos-categoria`). Ao abrir uma sessão nova, o Ravend lista as specs em andamento com o slug e a próxima task. Para continuar, chame a etapa seguinte com o slug:
+```text
+/ravend:build filtro-produtos-categoria
+/ravend:verify filtro-produtos-categoria
+```
 
-## Comandos
+## Quando o Ravend te pergunta algo
+
+Ele só para em três situações:
+
+| Momento | Por quê |
+|---|---|
+| **Dúvida de regra de negócio** | Se algo na demanda muda o resultado e não dá para deduzir do código, ele pergunta em vez de inventar. |
+| **Aprovar a spec** | Só em demandas grandes. Nas pequenas ele segue sozinho. |
+| **Abrir o PR** | Sempre. Push e PR são visíveis para o time, então ele pede autorização. |
+
+Ele também para e te chama se ficar travado: o mesmo erro 3 vezes seguidas, ou o review apontando o mesmo problema depois de 2 rodadas de correção.
+
+## Quem decide o tamanho da demanda
+
+**O próprio Ravend**, no começo do `/ravend:spec`. Ele lê a demanda e o código afetado e classifica em um dos quatro níveis, dizendo qual escolheu numa linha:
+
+| Nível | Exemplo | O que muda para você |
+|---|---|---|
+| **trivial** | Corrigir um texto, ajustar um valor padrão (até ~2 arquivos, sem comportamento novo) | Sem spec. Vai direto para o código. |
+| **small** | Novo filtro em um endpoint existente | Spec curta. Segue sem pedir aprovação. |
+| **large** | Feature front + back, endpoint ou tabela nova, migração | Spec completa com design. **Para e pede sua aprovação antes de codar.** |
+| **bug** | "O total fica negativo quando…" | Escreve primeiro o teste que reproduz o bug. |
+
+Discordou da classificação? Force o nível:
+```text
+/ravend:spec --tier large Adicionar campo "apelido" no cadastro
+```
+
+## Usando os seus MCPs
+
+O Ravend se adapta às ferramentas que **você** já usa. No `/ravend:init`, ele lista os seus servidores MCP (os seus, os do projeto, os de plugins e os conectores do claude.ai) e pergunta, papel por papel, quais entram no fluxo:
+
+```text
+Você tem um MCP de contexto do código? Selecione os que o Ravend deve usar ao explorar e revisar.
+  [x] serena        busca semântica e navegação por símbolos
+  [ ] Nenhum
+
+Você tem um MCP para o seu git (GitHub/GitLab)?
+  [x] github        ler issues, ver checks de CI, abrir o PR
+  [ ] Nenhum
+```
+
+Ele só pergunta sobre papéis para os quais você tem algum MCP compatível. Para os que ficaram sem nenhum, oferece instalar um padrão (Playwright para navegador, Context7 para documentação).
+
+| Papel | Para que o Ravend usa | Em quais etapas |
+|---|---|---|
+| `issues` | Ler o ticket (Jira, Linear, GitHub/GitLab issues) | spec |
+| `git` | Ler issues, ver checks de CI e comentários, abrir o PR | spec, review, ship |
+| `context` | Busca semântica e navegação no código | spec, build, review |
+| `docs` | Documentação das bibliotecas na versão que o projeto usa | spec, build |
+| `knowledge` | Wiki e decisões internas (Confluence, Notion, Drive) | spec |
+| `design` | Telas e tokens de design (Figma) | spec, build, verify |
+| `browser` | Explorar a tela para escrever testes E2E | verify |
+| `api` | Chamar e testar a API | verify |
+| `database` | Consultar o schema e os dados reais (só leitura) | spec, build, verify |
+| `observability` | Erros, logs e métricas para investigar bugs (Sentry, Datadog) | spec, verify |
+
+A escolha fica no seu `profile.json`, então cada dev do time pode usar MCPs diferentes no mesmo repositório. Para refazer só essa parte:
+```text
+/ravend:init --integrations
+```
+Para ver o que você tem e o que está em uso, no terminal:
+```bash
+ravend mcp             # todos os seus MCPs, com status (sem mostrar tokens)
+ravend integrations    # papéis disponíveis e os MCPs escolhidos
+```
+
+> Por que no `init` e não na instalação? O Claude Code não permite que um plugin faça perguntas na hora de instalar. Por isso, ao abrir um repositório ainda não configurado, o Ravend avisa para rodar o `/ravend:init`.
+
+## Comandos, um por um
+
+O `<slug>` é o nome curto da spec, mostrado quando ela é criada e no início de cada sessão.
+
+| Comando | Quando usar | Exemplo |
+|---|---|---|
+| `/ravend:init` | Uma vez por repositório. `--refresh` quando os comandos do projeto mudarem; `--integrations` para refazer só a escolha de MCPs. | `/ravend:init` |
+| `/ravend:run` | **O comando do dia a dia.** Faz tudo, do começo ao fim. | `/ravend:run PROJ-123` |
+| `/ravend:spec` | Para planejar sem implementar ainda. | `/ravend:spec #45` |
+| `/ravend:build` | Implementar uma spec. Para algo trivial, aceita a descrição direto, sem spec. | `/ravend:build filtro-produtos-categoria` |
+| `/ravend:build --fix` | Corrigir o que o gate (`gate`), a verificação (`verify`) ou o review (`review`) apontou. | `/ravend:build filtro-produtos-categoria --fix review` |
+| `/ravend:verify` | Rodar a suíte completa e conferir se cada critério de aceite tem um teste que passa. Escreve os testes de API/E2E que faltarem. | `/ravend:verify filtro-produtos-categoria` |
+| `/ravend:review` | Review feito por outro agente, que não viu a implementação. Aponta problemas P0/P1/P2 com arquivo e linha. | `/ravend:review filtro-produtos-categoria` |
+| `/ravend:ship` | Abrir o PR. Só funciona se o gate estiver verde e o review aprovado. | `/ravend:ship filtro-produtos-categoria` |
+| `/ravend:learn` | Ensinar algo específico do projeto, para não repetir o erro. | `/ravend:learn Nunca usar LocalDateTime nos DTOs; o padrão do projeto é OffsetDateTime` |
+
+`/ravend:run` é só `spec → build → verify → review → ship` em sequência. Use os comandos separados quando quiser controlar cada etapa.
+
+## Quality gate: o que é e como rodar
+
+O gate é a lista de comandos que **o seu projeto já usa** para dizer se o código está ok: compilar, testes, lint. O Ravend só considera algo pronto quando esses comandos terminam com sucesso. Quem decide é o exit code do comando, não a opinião do modelo.
+
+Existem dois:
+
+| Gate | O que roda | Quando roda |
+|---|---|---|
+| **fast** | Compilação + testes ligados aos arquivos alterados + lint desses arquivos. Deve levar menos de 2 minutos. | Depois de cada task do `/ravend:build`. Também quando o Claude tenta encerrar com código alterado e o gate não está verde. |
+| **full** | O que o CI rodaria: build completo, todos os testes, lint, integração e E2E. | No `/ravend:verify` e antes do `/ravend:ship`. |
+
+**Você normalmente não precisa rodar o gate na mão**: o build, o verify e o ship rodam sozinhos. Se quiser rodar:
+
+- **Dentro do Claude Code:** `/ravend:verify <slug>`, ou simplesmente peça "roda o gate full".
+- **No terminal**, com o comando `ravend` (o `/ravend:init` oferece instalar; veja [Comando `ravend`](#comando-ravend-no-terminal)), de dentro do repositório:
+  ```bash
+  ravend gate fast              # roda o gate rápido
+  ravend gate full              # roda o gate completo
+  ravend gate full --dry-run    # só mostra quais comandos seriam executados
+  ravend status                 # specs em andamento e resultado do último gate
+  ```
+
+**De onde vêm os comandos?** O `/ravend:init` descobre e grava em `~/.ravend/projects/<projeto>/profile.json`. Para mudar, edite esse arquivo ou rode `/ravend:init --refresh`. Exemplo de um projeto Spring com Maven:
+
+```json
+"gate": {
+  "fast": [
+    {"name": "compile", "run": "./mvnw -q test-compile", "when": ["*.java"]},
+    {"name": "unit", "run": "./mvnw -q surefire:test -Dtest={java_tests} -Dsurefire.failIfNoSpecifiedTests=false", "when": ["*.java"]}
+  ],
+  "full": [
+    {"name": "verify", "run": "./mvnw -q verify", "timeout": 1800}
+  ]
+}
+```
+Exemplos completos para Spring, Quarkus, Angular e React: [`skills/init/references/profile.md`](skills/init/references/profile.md).
+
+**Precisa desligar temporariamente?** `RAVEND_GATE=off` desliga a checagem ao encerrar a sessão; `RAVEND_FORMAT=off` desliga a formatação automática.
+
+## Modo headless (sem você na frente)
+
+O `/ravend:run` é interativo: você acompanha na sessão do Claude Code. O modo headless faz o mesmo pipeline **por um script no terminal**, sem sessão aberta.
+
+**Para que serve:**
+- **Deixar rodando enquanto você faz outra coisa.** Dispare uma demanda e volte quando terminar. Com `--worktree`, ele trabalha numa pasta separada e a sua cópia do repositório fica livre para você continuar mexendo.
+- **Várias demandas em paralelo**, cada uma no seu worktree.
+- **Rodar em CI** ou numa máquina de build, por exemplo a partir de uma issue com um label.
+- **Mais garantia de que o gate foi respeitado:** o script roda o gate por conta própria entre as etapas. Se o modelo disser que está verde e não estiver, o script percebe e para.
+
+**Quando não usar:** se você quer acompanhar e opinar durante o trabalho. Para isso, use `/ravend:run`.
+
+### Como usar
+
+Rode **no terminal**, dentro do repositório (que já precisa ter passado pelo `/ravend:init`), com o [comando `ravend`](#comando-ravend-no-terminal).
+
+**Caso 1: rodar até o review, sem abrir PR** (o padrão)
+```bash
+ravend run "Adicionar filtro por categoria em GET /products"
+```
+Se a demanda for *large*, ele para depois de escrever a spec e mostra o comando para continuar. Revise a spec (o caminho aparece na saída) e retome:
+```bash
+ravend run --resume filtro-produtos-categoria
+```
+
+**Caso 2: do começo ao PR, sem nenhuma pausa**
+```bash
+ravend run PROJ-123 --yes --until pr
+```
+
+**Caso 3: várias demandas em paralelo, em segundo plano**
+```bash
+ravend run "#45" --worktree > ravend-45.log 2>&1 &
+ravend run "#46" --worktree > ravend-46.log 2>&1 &
+```
+Cada demanda trabalha numa pasta irmã do repositório (`../meu-repo-<slug>`), na sua própria branch, com o próprio resultado de gate. Se o gate precisar subir a aplicação, as execuções se revezam para não disputar a mesma porta. Sem `--worktree`, o Ravend recusa uma segunda execução na mesma pasta.
+
+**Caso 4: só gerar a spec para revisar depois**
+```bash
+ravend run "Migrar cadastro de clientes para o serviço de endereços" --until spec
+```
+
+**Caso 5: em CI ou container descartável, com teto de gasto**
+```bash
+ravend run "$ISSUE_URL" --yes --until pr --budget-usd 3 --permission-mode bypassPermissions
+```
+Use `bypassPermissions` só em ambiente isolado (container/sandbox). A máquina de CI também precisa do `profile.json`: rode `/ravend:init` lá uma vez ou copie o arquivo para `~/.ravend/projects/<projeto>/`.
+
+### Parâmetros
+
+| Parâmetro | Para que serve | Padrão |
+|---|---|---|
+| `"<demanda>"` | Texto, `PROJ-123`, `#45` ou URL da issue. | — |
+| `--resume <slug>` | Continuar uma spec que já existe (considerada aprovada). | — |
+| `--until <etapa>` | Até onde ir: `spec`, `build`, `verify`, `review` ou `pr` (`pr` faz push e abre o PR). | `review` |
+| `--yes` | Não parar para aprovar spec *large*. | desligado |
+| `--worktree` | Trabalhar numa pasta separada (git worktree), sem mexer na sua cópia atual. | desligado |
+| `--max-fix-rounds N` | Quantas vezes tentar corrigir falhas do gate/review antes de desistir e pedir ajuda. | `2` |
+| `--budget-usd X` | Gasto máximo em dólares **por chamada** ao Claude. | sem limite |
+| `--model <modelo>` | Modelo usado em todas as etapas. | o padrão do seu Claude Code |
+| `--permission-mode <modo>` | Permissões do Claude. `acceptEdits` libera edição de arquivos, git, os comandos do seu gate e os seus MCPs escolhidos (cada um só nas etapas do papel dele). | `acceptEdits` |
+
+### Como saber o resultado
+
+O script imprime uma linha por etapa e termina com um código de saída:
+
+| Código | Significado | O que fazer |
+|---|---|---|
+| `0` | Terminou (ou parou de propósito para você aprovar a spec). | Ver a saída. |
+| `1` | Erro inesperado. | Ver os logs. |
+| `2` | Falta configuração (sem `/ravend:init`, slug não existe…). | Ler a mensagem. |
+| `3` | Precisa de você (pergunta em aberto, review que não convergiu, gate que não ficou verde). | Abrir o Claude Code e continuar com `/ravend:build <slug> --fix …` ou `--resume`. |
+
+Os logs de cada chamada ficam em `~/.ravend/projects/<projeto>/runs/headless-*`.
+
+### Comando `ravend` no terminal
+
+O `/ravend:init` oferece instalar. Para instalar depois, peça ao Claude ("instala o comando ravend") ou rode no terminal:
+```bash
+python3 "$(ls -d ~/.claude/plugins/cache/*/ravend/*/ | sort -V | tail -1)scripts/ravend.py" install-cli
+```
+Isso cria `~/.local/bin/ravend`, que sempre aponta para a versão instalada do plugin. Se `~/.local/bin` não estiver no seu `PATH`, a saída mostra a linha para adicionar no `.bashrc`/`.zshrc`.
 
 | Comando | O que faz |
 |---|---|
-| `/ravend:init` | Configura o projeto **nesta máquina**: perfil do gate, notas do projeto, MCPs locais. |
-| `/ravend:run <demanda>` | Pipeline completo interativo, parando só nos checkpoints humanos. |
-| `/ravend:spec <demanda \| PROJ-123 \| #45>` | Classifica o nível e escreve uma spec única com critérios Given/When/Then e tasks. |
-| `/ravend:build <slug> [--fix gate\|verify\|review]` | Implementa task a task: teste falhando → código → gate fast → commit. Também corrige falhas do gate e findings de review. |
-| `/ravend:verify <slug>` | Roda o gate full, monta a matriz critério→teste e escreve os testes de API/E2E que faltam. |
-| `/ravend:review <slug>` | Review por um agente com contexto limpo; findings P0/P1/P2 com `arquivo:linha` e cenário de falha. |
-| `/ravend:ship <slug>` | Confere gate verde + review aprovado, faz push e abre o PR com critérios, evidências e veredito. |
-| `/ravend:learn <lição>` | Guarda uma lição específica do projeto na knowledge local. |
+| `ravend run "<demanda>" [opções]` | Pipeline headless (`ravend run --help`) |
+| `ravend gate fast\|full [--dry-run]` | Quality gate da pasta atual |
+| `ravend status` | Specs em andamento e último gate |
+| `ravend mcp` / `ravend integrations` | Seus MCPs / os escolhidos para o Ravend |
 
-Skills carregadas automaticamente por contexto: `stack-spring`, `stack-quarkus`, `stack-angular`, `stack-react`, `api-tests` e `e2e-playwright`.
+---
 
-## Como o pipeline decide o tamanho do processo
+## Referência
 
-| Nível | Quando | O que acontece |
-|---|---|---|
-| **trivial** | ≤2 arquivos, sem comportamento novo | Sem spec. Implementa direto com o gate. |
-| **small** | um módulo/camada, comportamento claro | Spec curta (problema, critérios, tasks). Segue sem pedir aprovação. |
-| **large** | vários módulos ou full stack, contrato de API/DB novo, migração, ambiguidade real | Spec completa com design. **Você aprova antes do build.** |
-| **bug** | defeito | Primeiro um teste que reproduz o bug; depois a correção. |
+Detalhes de funcionamento. Não é preciso ler para usar.
 
-Uma spec, não cinco documentos. Os critérios de aceite são escritos em Given/When/Then com o nível de teste que vai prová-los (`[unit]`, `[api]`, `[e2e]`, `[visual]`) e viram testes no build.
+### Onde ficam os dados
 
-Há só dois checkpoints humanos: **aprovar a spec** (só no nível large) e **aprovar o push/PR**. Entre eles, quem decide se algo está pronto é o gate.
-
-## Onde ficam os dados (local, por desenvolvedor)
-
-O Ravend é feito para ser usado por várias pessoas no mesmo repositório **sem sujar o repositório**. Perfil, notas, knowledge e specs são de cada desenvolvedor e ficam na máquina dele:
+Tudo fica na sua máquina, nunca no repositório. Assim várias pessoas usam o Ravend no mesmo repo sem conflito. O que o time vê é o PR: o `/ravend:ship` coloca nele o resumo, os critérios de aceite com o teste que prova cada um, o resultado do gate e o veredito do review.
 
 ```
-~/.ravend/                                  (ou $RAVEND_HOME)
-└── projects/
-    └── github.com-org-repo/                ← id derivado do remote origin (igual em todos os clones/worktrees)
-        ├── profile.json                    comandos do gate, formatters, app, paths protegidos
-        ├── project.md                      notas curtas de convenções do projeto (injetadas no início da sessão)
-        ├── knowledge/                      lições aprendidas: index.md + 1 arquivo por lição
-        ├── specs/<slug>/                   spec.md, verify.md, review-N.md, evidence/
-        ├── runs/                           logs do gate, da app e do modo headless
-        └── state/                          último gate, árvore verde, sessão armada
+~/.ravend/projects/github.com-org-repo/     (ou $RAVEND_HOME/projects/…)
+├── profile.json     comandos do gate, formatters, como subir a app, arquivos protegidos
+├── project.md       notas curtas sobre o projeto, lidas no início de cada sessão
+├── knowledge/       lições salvas com /ravend:learn
+├── specs/<slug>/    spec.md, verify.md, review-N.md
+├── runs/            logs do gate e do modo headless
+└── state/<pasta>/   último gate e sessão em build, separados por clone/worktree
 ```
 
-- **O que o time vê é o PR.** O `/ravend:ship` coloca no corpo do PR o resumo, os critérios de aceite com o teste que prova cada um, o resultado do gate e o veredito do review.
-- Repositórios sem remote usam o nome da pasta mais um hash do caminho.
-- Pode editar ou apagar qualquer arquivo dali à vontade. Apagar o diretório do projeto equivale a "desinstalar" o Ravend daquele repo.
+O nome da pasta vem do remote `origin`, então é o mesmo em todos os clones e worktrees. Pode editar ou apagar qualquer arquivo; apagar a pasta do projeto "desinstala" o Ravend daquele repo.
 
-## Quality gate e hooks
+### Hooks
 
-O gate é a peça central: **decisão por exit code, executada por script, nunca pelo julgamento do modelo.**
+Ficam inativos em repositórios sem `/ravend:init`.
 
-- **`gate fast`** roda depois de cada task. Cobre só o que mudou: compilação/typecheck, testes relacionados aos arquivos alterados e lint dos arquivos alterados.
-- **`gate full`** é o que o CI rodaria para a branch: build, todos os testes, lint, integração e E2E. Opcionalmente também cobertura do diff e mutation testing.
-- A saída mostra só o trecho relevante da falha e o caminho do log completo, para manter o contexto do modelo enxuto.
-- Os comandos ficam no `profile.json` local; veja a referência com exemplos para Spring, Quarkus, Angular e React em [`skills/init/references/profile.md`](skills/init/references/profile.md).
-
-```bash
-python3 ~/.claude/plugins/.../ravend/scripts/ravend.py gate fast   # o caminho exato aparece no início da sessão
-python3 .../ravend.py gate full --dry-run                          # mostra os comandos resolvidos
-python3 .../ravend.py status                                       # specs ativas + último gate
-```
-
-Hooks do plugin (todos inertes em repositórios sem perfil local):
-
-| Hook | Comportamento |
+| Hook | O que faz |
 |---|---|
-| `SessionStart` | Injeta id do projeto, notas, índice da knowledge e specs ativas. Exporta `RAVEND_ROOT`, `RAVEND_DATA` e `RAVEND_SESSION_ID`. |
-| `PreToolUse` (Edit/Write) | Bloqueia edição de `protected_paths` (`.env`, chaves, código gerado…). |
-| `PostToolUse` (Edit/Write) | Roda o formatter rápido configurado para o arquivo editado. Quem formata é a ferramenta, não o prompt. |
-| `Stop` | **Só enquanto um build está armado** (`/ravend:build` arma e `/ravend:ship` desarma): se a árvore mudou desde o último gate verde, roda o `gate fast` e impede o Claude de encerrar com o gate vermelho. Depois de 3 bloqueios seguidos, libera e pede intervenção humana. |
+| Início da sessão | Mostra o projeto, as notas, as lições salvas e as specs em andamento. |
+| Antes de editar | Bloqueia edição dos `protected_paths` (`.env`, chaves, código gerado…). |
+| Depois de editar | Roda o formatter configurado no arquivo editado. |
+| Ao encerrar | Só durante um `/ravend:build`: se o código mudou desde o último gate verde, roda o `gate fast` e não deixa o Claude encerrar com ele vermelho. Depois de 3 bloqueios seguidos, libera e pede sua intervenção. |
 
-Válvulas de escape: `RAVEND_GATE=off` (desliga o hook de Stop), `RAVEND_FORMAT=off` (desliga o formatter) e `ravend.py disarm`.
+### Testes
 
-## Testes: unit, API e E2E
+- **Unit e API:** ficam no repositório, no estilo do projeto. As skills de stack (`stack-spring`, `stack-quarkus`, `stack-angular`, `stack-react`) trazem os padrões de cada uma e são carregadas automaticamente.
+- **E2E e visual:** viram arquivos `@playwright/test` no repositório e rodam no gate e no CI. O MCP do Playwright só é usado para explorar a tela e descobrir seletores, dentro de um agente separado, para não poluir a sua sessão.
+- **App rodando:** passos do gate marcados com `needs_app` sobem a aplicação (`profile.app`), esperam o healthcheck e derrubam no final.
 
-- **Unit e API:** os testes ficam versionados no repositório-alvo, no estilo do projeto. As skills de stack trazem padrões por camada: Spring (`@WebMvcTest`, `@SpringBootTest` + Testcontainers `@ServiceConnection`), Quarkus (`@QuarkusTest` + RestAssured + Dev Services, `@InjectMock`), Angular (TestBed + `HttpTestingController`, Vitest/Jest/Karma) e React (Vitest + Testing Library + MSW).
-- **E2E e visual:** o resultado é sempre um arquivo `@playwright/test` no repo, que roda no gate e no CI. O **MCP do Playwright** serve para *explorar* a UI e descobrir roles/labels; essa exploração acontece dentro do agente `verifier`, então os snapshots grandes do navegador não entram na sua sessão. Critérios visuais usam `toHaveScreenshot`.
-- **Ciclo de vida da app:** passos do gate com `needs_app` sobem a aplicação (`profile.app`), esperam o healthcheck e derrubam no final. O `webServer` do Playwright também funciona para o frontend.
+### Agentes
 
-## Agentes
-
-Só três, e cada um existe por um motivo concreto:
-
-| Agente | Modelo | Por quê |
-|---|---|---|
-| `reviewer` | opus | Review com **contexto limpo**, sem o viés de quem implementou. Só leitura; devolve JSON. |
-| `verifier` | sonnet | Escreve testes de E2E/API que faltam e isola a exploração do navegador. Não toca em código de produção. |
-| `implementer` | sonnet | Usado só para tasks `[P]` independentes em paralelo, cada uma no seu git worktree. |
-
-A orquestração é feita pela própria sessão principal; não existe um "agente orquestrador". Intake, PRD, tech spec e decomposição viraram uma única skill, porque são a mesma linha de raciocínio, e quebrá-las em agentes só multiplicava handoffs e releitura de arquivos.
-
-## Modo headless / CI
-
-Para rodar sem supervisão (CI, máquina de build, background), use o runner. **O loop de controle é código**: o modelo é chamado em cada etapa via `claude -p` com JSON Schema, e o gate é re-executado pelo próprio runner, então nenhuma etapa consegue simplesmente declarar que está verde.
-
-```bash
-RUN="python3 ~/.claude/plugins/.../ravend/scripts/ravend_run.py"   # ou $RAVEND_ROOT/scripts/ravend_run.py
-
-$RUN "Adicionar filtro por categoria em /products"          # para após a spec se o nível for large
-$RUN --resume add-category-filter --until pr                  # continua depois que você aprovou a spec
-$RUN PROJ-123 --yes --until review --worktree --budget-usd 3   # sem checkpoint, em worktree separado
-```
-
-| Opção | Efeito |
+| Agente | Por que existe |
 |---|---|
-| `--until spec\|build\|verify\|review\|pr` | Última etapa (padrão `review`; `pr` faz push e abre o PR). |
-| `--yes` | Pula a aprovação da spec large. |
-| `--max-fix-rounds N` | Rodadas de correção do gate e do review (padrão 2). Para antes se o mesmo P0/P1 reaparecer. |
-| `--budget-usd X` | Teto de gasto por chamada (`--max-budget-usd`). |
-| `--worktree` | Trabalha num worktree irmão na branch da feature. |
-| `--permission-mode` | Padrão `acceptEdits`. Ferramentas liberadas: git, o script do Ravend e os comandos do seu gate/app. Em sandbox/container, use `bypassPermissions`. |
+| `reviewer` (opus) | Review com contexto limpo, sem o viés de quem implementou. Só lê. |
+| `verifier` (sonnet) | Escreve testes de API/E2E que faltam e isola a exploração do navegador. Não mexe em código de produção. |
+| `implementer` (sonnet) | Só para tasks independentes marcadas `[P]`, em paralelo, cada uma no seu worktree. |
 
-Códigos de saída: `0` concluído (ou pausado num checkpoint), `1` falha, `2` configuração faltando, `3` precisa de humano. Os logs de cada chamada ficam em `~/.ravend/projects/<id>/runs/headless-*`.
+O resto acontece na sua sessão principal.
 
-O runner precisa do perfil local. Numa máquina de CI, rode `/ravend:init` uma vez ou copie um `profile.json` para `$RAVEND_HOME/projects/<id>/`.
+### Integrações
 
-## Integrações
+- **GitHub:** issues via `gh issue view`, PRs via `gh pr create`.
+- **Jira:** configure o MCP remoto oficial da Atlassian no Claude Code e use `/ravend:spec PROJ-123`.
+- **Seus MCPs:** escolhidos por papel no `/ravend:init` (veja [Usando os seus MCPs](#usando-os-seus-mcps)). Se você não tiver um para navegador ou documentação, o `init` oferece instalar Playwright e Context7, com versão fixa e só para você (escopo local).
+- **Worktrees:** MCPs de escopo local ficam registrados no caminho da pasta principal. No modo headless com `--worktree`, o Ravend os repassa para o worktree automaticamente.
 
-- **GitHub:** issues via `gh issue view`; PRs via `gh pr create`.
-- **Jira:** configure o MCP remoto oficial da Atlassian no Claude Code (escopo local ou de usuário) e use `/ravend:spec PROJ-123`. Sem o MCP, o Ravend pede que você cole o conteúdo da issue.
-- **Playwright MCP / Context7:** oferecidos pelo `/ravend:init` com versão fixa e escopo local (`@playwright/mcp@0.0.84`, `@upstash/context7-mcp@4.5.0`).
+### Custo de contexto
 
-## Custo de contexto e desempenho
+- Cerca de 1,5k tokens fixos por sessão (as descrições das skills). O conteúdo de cada skill só é carregado quando ela é usada.
+- O gate devolve só o trecho do erro; o log completo fica em disco.
+- Subagentes só onde compensam (review, E2E, tasks paralelas). Confira com `claude --plugin-dir . plugin details ravend`.
 
-- **~1,5k tokens fixos por sessão** (descrições de skills e agentes; os hooks não custam contexto). Cada skill só carrega o corpo quando é usada. Confira com `claude --plugin-dir . plugin details ravend`.
-- **O prompt cache é preservado.** O contexto injetado no início da sessão é estável; o estado mutável fica em arquivos lidos sob demanda.
-- **Subagentes só onde compensam:** review (independência), E2E (isolar snapshots ruidosos) e tasks paralelas. O resto acontece na sessão principal, que reaproveita o cache em vez de pagar a releitura de arquivos num contexto novo.
-- **Saída de ferramentas filtrada:** o gate devolve só os trechos de erro; os logs completos ficam em disco.
-- **Modelo por papel:** opus no review, sonnet na implementação e na verificação.
+### Limitações conhecidas
 
-## Desenvolvendo o plugin
+- A checagem ao encerrar roda o `gate fast` de forma síncrona. Mantenha o fast abaixo de 2 minutos e deixe o pesado no full.
+- O paralelismo com `implementer` é conservador: só para tasks que mexem em arquivos diferentes.
+- Screenshots de referência do Playwright dependem do SO e do navegador. Gere-as no mesmo ambiente do CI.
+- Windows nativo não foi testado; use WSL.
+
+### Desenvolvendo o plugin
 
 ```bash
 claude --plugin-dir .                                   # usa o plugin a partir do checkout
-python3 -m unittest discover -s tests                   # testes do runtime (gate, hooks, identidade)
-claude plugin validate .                                # manifesto + marketplace (o aviso sobre CLAUDE.md é esperado)
-claude plugin validate skills && claude plugin validate agents
+python3 -m unittest discover -s tests                   # testes do runtime
+claude plugin validate . && claude plugin validate skills --strict && claude plugin validate agents
 claude plugin eval . --scaffold --trust-plugin --allow-tools Bash Write Edit Agent --runs 1 --ablation none
 ```
 
-Os evals em [`evals/`](evals/) montam um repositório fixture (Node, sem dependências) e medem o comportamento que importa:
-- uma mudança trivial não gera spec;
-- uma demanda grande gera spec large com critérios testáveis;
-- o build é test-first e roda o gate;
-- o review pega um bug de limite que a suíte verde não pega.
+Os evals em [`evals/`](evals/) usam um repositório fixture e verificam que uma mudança trivial não gera spec, que uma demanda grande gera spec large com critérios testáveis, que o build é test-first e roda o gate, e que o review pega um bug de limite que a suíte verde não pega. Rode-os a cada mudança de skill ou agente.
 
-Rode os evals a cada mudança de skill ou agente; sem `--ablation none`, eles também comparam com o Claude Code sem o plugin.
-
-Observação: no sandbox do `claude plugin eval` o filesystem do Bash é read-only (só Edit/Write escrevem). Por isso branch e commit não são avaliados ali; isso fica coberto pelos testes do runtime em `tests/`, onde um `claude` falso exercita o loop completo do runner headless.
-
-Estrutura:
 ```
 .claude-plugin/   plugin.json, marketplace.json
 skills/           init, spec, build, verify, review, ship, run, learn, api-tests, e2e-playwright, stack-*
 agents/           reviewer, verifier, implementer
 hooks/hooks.json  SessionStart, PreToolUse, PostToolUse, Stop
-scripts/          ravend.py (runtime: identidade, gate, app, hooks) · ravend_run.py (headless)
+scripts/          ravend.py (runtime) · ravend_run.py (headless)
 tests/            testes do runtime
 evals/            cenários de avaliação + fixture
 ```
-
-## Vindo do Ravend para OpenCode
-
-A versão anterior (agentes e comandos do OpenCode em `.opencode/` e `.lla/`) continua no histórico git, na `main`. Mapeamento:
-
-| Antes | Agora |
-|---|---|
-| 9 agentes + orchestrator | Sessão principal + `reviewer`, `verifier` e `implementer` |
-| intake → PRD → tech spec → tasks (4 artefatos) | `/ravend:spec`: 1 arquivo, profundidade proporcional |
-| `/sdd-qa` com regras em prompt | `gate fast/full` em script + hook de Stop |
-| score 0–100 e regra de delta | gate binário + findings P0/P1 com evidência; no máximo 2 rodadas |
-| guardrails em markdown | formatters/linters do projeto via hooks e gate |
-| knowledge versionada com frequências seed | knowledge local por dev, capturada só de casos observados |
-| `.lla/sdd/current` + `~/.ravend/archive` | `~/.ravend/projects/<id>/specs` + git (o arquivo antigo não é tocado) |
-
-## Limitações conhecidas
-
-- O hook de Stop roda o `gate fast` de forma síncrona. Mantenha o fast realmente rápido (< 2 min) e deixe o pesado no `gate full`.
-- O paralelismo com `implementer` em worktrees é opt-in e conservador: só vale para tasks com arquivos disjuntos, e o merge é feito na sessão principal.
-- Baselines de screenshot do Playwright dependem do SO/navegador. Gere-as no mesmo ambiente do CI.
-- Windows nativo não foi testado (os scripts usam process groups POSIX); use WSL.
 
 ## Licença
 
