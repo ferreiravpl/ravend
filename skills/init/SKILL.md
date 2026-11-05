@@ -1,7 +1,7 @@
 ---
 name: init
-description: Set up Ravend for the current repository on this developer's machine — detect stacks, build the local gate profile (build/test/lint/format/app/E2E commands), write project notes, and optionally configure Playwright/Context7 MCP servers at local scope. Nothing is written into the repository.
-argument-hint: [--refresh]
+description: Set up Ravend for the current repository on this developer's machine — detect stacks, build the local gate profile (build/test/lint/format/app/E2E commands), write project notes, let the developer pick which of their own MCP servers each pipeline stage uses, and optionally install the `ravend` terminal command. Nothing is written into the repository.
+argument-hint: [--refresh | --integrations]
 disable-model-invocation: true
 ---
 
@@ -13,7 +13,7 @@ Everything this skill writes goes to `<data_dir>` (`~/.ravend/projects/<project-
 `RV="python3 $RAVEND_ROOT/scripts/ravend.py"` (empty `RAVEND_ROOT` → this skill's base dir + `/../../scripts/ravend.py`).
 - `$RV project` → `data_dir`, `has_profile`, `base_branch`.
 - `$RV detect` → modules, stacks, build tools, test runners, lint/format signals, compose files.
-- Existing profile and no `--refresh` → show it and ask what to change.
+- Existing profile and no `--refresh` → show it and ask what to change. `--integrations` → only step 6.
 
 ## 2. Confirm commands (read, don't guess)
 For each module read only: the build file sections that matter (plugins: surefire/failsafe, spotless, checkstyle, jacoco, pitest; or package.json `scripts`), CI config if present (`.github/workflows/*.yml` — the commands CI runs are the best source of truth), README "how to run/test". Check wrappers (`./mvnw`, `./gradlew`) and the package manager lockfile.
@@ -34,13 +34,16 @@ Ask whether to run `$RV gate full` now (can take minutes). A red baseline is imp
 ## 5. Project notes
 Write `<data_dir>/project.md`, **≤40 lines**, only what is not obvious from the code and is useful on every task: module map (1 line each), how to run things locally, test conventions (naming, levels, fixtures, Testcontainers/Dev Services), layering and error-handling conventions, generated code to never edit, known flaky tests, baseline failures. Derive conventions from 2–3 representative files per module, not from general best practices. This file is injected at session start — keep it lean.
 
-## 6. Tooling (ask first; local scope = this developer only)
-- UI module present → Playwright MCP for exploring/authoring E2E:
-  `claude mcp add playwright --scope local -- npx -y @playwright/mcp@0.0.84`
-- Library docs on demand → `claude mcp add context7 --scope local -- npx -y @upstash/context7-mcp@4.5.0`
-- Jira as a source → the Atlassian remote MCP (see README).
-- Suggest the `superpowers` plugin (brainstorming, systematic debugging, TDD discipline) if not installed.
-MCP changes take effect in the next session.
+## 6. Integrations — the developer's own MCP servers
+The pipeline adapts to the tools this developer already has; install or change nothing without asking.
+1. **Inventory**: `$RV mcp` (config files + `claude mcp list`: user/local/project, plugin servers, claude.ai connectors, with status; never secrets) plus the `mcp__*` tool namespaces visible in this session. Roles and the stages that use them: `$RV integrations`.
+2. **Match** servers to roles by name/hint/tools (a server may fill several): atlassian/jira/linear → `issues`; github/gitlab/bitbucket → `git` (and `issues` for GitHub issues); serena/sourcegraph/code index → `context`; context7/vendor docs → `docs`; confluence/notion/drive → `knowledge`; figma → `design`; playwright/chrome-devtools → `browser`; postman/api-test → `api`; postgres/mysql/mongo → `database`; sentry/datadog/grafana → `observability`.
+3. **Ask** with AskUserQuestion in the user's language, one question per role that has candidates (≤4 per call; batch the rest), `multiSelect: true`, options = candidates (name + what it would be used for, recommended first) + "Nenhum". E.g. "Você tem um MCP de contexto do código? Selecione os que o Ravend deve usar ao explorar e revisar." The user may answer "Other" with any inventory server. Skip roles without candidates; then one last question listing the uncovered roles and offering the defaults at local scope: `browser` (only with a UI module) → `claude mcp add playwright --scope local -- npx -y @playwright/mcp@0.0.84`; `docs` → `claude mcp add context7 --scope local -- npx -y @upstash/context7-mcp@4.5.0`; Jira with no MCP → the Atlassian remote MCP (README).
+4. **Save** in `profile.json`: `"integrations": {"<role>": ["<exact server name as listed by $RV mcp>"]}` (omit unchosen roles). A server that is currently failing may be chosen — mention it. From then on the session start lists them, each stage uses its roles, and the headless runner allows their tools only in those stages. New MCP servers take effect in the next session.
+
+## 7. Terminal command (ask)
+Offer `$RV install-cli`: installs `ravend` in `~/.local/bin` (outside the repo, follows plugin updates) so the developer can run `ravend run "<demand>"` (unattended pipeline), `ravend gate full`, `ravend status`. If the output says the dir is not on PATH, show the line to add.
+Suggest the `superpowers` plugin (brainstorming, systematic debugging, TDD discipline) if not installed.
 
 ## Output
-Summary: project id, data dir, stacks, gate fast/full steps (one line each), baseline result, recommendations. Next: `/ravend:run <demand>`.
+Summary: project id, data dir, stacks, gate fast/full steps (one line each), baseline result, integrations (role → server), recommendations. Next: `/ravend:run <demand>`.

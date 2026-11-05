@@ -23,6 +23,11 @@ prompt = args[args.index("-p") + 1]
 script = json.loads(Path(os.environ["FAKE_SCRIPT"]).read_text())
 log = Path(os.environ["FAKE_LOG"]); calls = json.loads(log.read_text()) if log.exists() else []
 calls.append(prompt); log.write_text(json.dumps(calls))
+if os.environ.get("FAKE_ARGS"):
+    alog = Path(os.environ["FAKE_ARGS"]); allargs = json.loads(alog.read_text()) if alog.exists() else []
+    cfg = args[args.index("--mcp-config") + 1] if "--mcp-config" in args else None
+    allargs.append({"prompt": prompt, "args": args, "mcp": json.loads(Path(cfg).read_text()) if cfg else None})
+    alog.write_text(json.dumps(allargs))
 stage = prompt.split()[0].replace("/ravend:", "")
 if stage == "build" and "--fix" in prompt:
     stage = "fix"
@@ -123,6 +128,43 @@ class RunnerCase(unittest.TestCase):
         (ravend.data_dir(self.repo) / "profile.json").unlink()
         res, calls = self.run_pipeline(self.SPEC_SMALL, "x")
         self.assertEqual((res.returncode, calls), (2, []))
+
+
+    def test_chosen_mcp_servers_are_allowed_only_in_their_stages(self):
+        data = ravend.data_dir(self.repo)
+        profile = json.loads((data / "profile.json").read_text())
+        profile["integrations"] = {"issues": ["claude.ai Atlassian"], "browser": ["chrome-devtools"]}
+        ravend.save_json(data / "profile.json", profile)
+        args_log = Path(self.tmp.name) / "args.json"
+        res, _ = self.run_pipeline({**self.SPEC_SMALL, **self.OK}, "x", FAKE_ARGS=str(args_log))
+        self.assertEqual(res.returncode, 0, res.stdout)
+        allowed = {c["prompt"].split()[0]: c["args"] for c in json.loads(args_log.read_text())}
+        self.assertIn("mcp__claude_ai_Atlassian", allowed["/ravend:spec"])
+        self.assertNotIn("mcp__chrome-devtools", allowed["/ravend:spec"])
+        self.assertIn("mcp__chrome-devtools", allowed["/ravend:verify"])
+        self.assertNotIn("mcp__playwright", allowed["/ravend:verify"])  # a browser MCP was chosen
+
+    def test_second_run_in_same_checkout_is_refused(self):
+        lock = ravend.state_dir(self.repo) / "run.lock"
+        with ravend.file_lock(lock, blocking=False):
+            res, calls = self.run_pipeline({**self.SPEC_SMALL, **self.OK}, "x")
+        self.assertEqual(res.returncode, 2, res.stdout)
+        self.assertIn("--worktree", res.stdout)
+        self.assertEqual(calls, ["/ravend:spec"])
+
+    def test_worktree_run_gets_local_mcp_servers_of_main_checkout(self):
+        cfg = Path(self.tmp.name) / "cfg"
+        ravend.save_json(cfg / ".claude.json", {"projects": {str(self.repo): {"mcpServers": {
+            "pw": {"command": "npx", "args": ["@playwright/mcp@1"]}}}}})
+        args_log = Path(self.tmp.name) / "args.json"
+        res, _ = self.run_pipeline({**self.SPEC_SMALL, **self.OK}, "x", "--worktree", "--until", "build",
+                                   FAKE_ARGS=str(args_log), CLAUDE_CONFIG_DIR=str(cfg))
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        calls = json.loads(args_log.read_text())
+        self.assertIsNone(calls[0]["mcp"])  # spec runs in the main checkout
+        self.assertEqual(calls[1]["mcp"], {"mcpServers": {"pw": {"command": "npx", "args": ["@playwright/mcp@1"]}}})
+        path = calls[1]["args"][calls[1]["args"].index("--mcp-config") + 1]
+        self.assertFalse(Path(path).exists())  # temp config removed at the end
 
 
 if __name__ == "__main__":

@@ -26,9 +26,18 @@ Location: `<data_dir>/profile.json` (local to the developer, never committed). R
     "fast": [ /* steps */ ],
     "full": [ /* steps */ ]
   },
+  "integrations": {                                 // the developer's MCP servers per role (names as `ravend.py mcp` lists them)
+    "issues": ["claude.ai Atlassian"],
+    "git": ["github"],
+    "context": ["serena"],
+    "browser": ["playwright"]
+  },
   "headless": {"allowed_tools": ["Bash(docker compose *)"]}
 }
 ```
+
+## Integrations
+Roles (`ravend.py integrations` prints them): `issues`, `git`, `context`, `docs`, `knowledge`, `design`, `browser`, `api`, `database`, `observability`. Each role is used only in its stages (e.g. `issues` → spec, `browser` → verify, `git` → spec/review/ship). The headless runner adds `mcp__<server>` to the allowed tools of exactly those stages. Unknown role names are allowed and apply to every stage.
 
 ## Step fields
 | field | meaning |

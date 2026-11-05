@@ -15,7 +15,7 @@ Pushing and opening a PR is visible to the team: confirm with the user first unl
   - `last_gate.full.status == "PASS"` **and** its `fingerprint == tree` (gate ran on exactly this code). Otherwise run `gate full` first.
 - Newest `<data_dir>/specs/<slug>/review-N.md` is APPROVED and was written after the last code change (compare with `git log -1 --format=%cI`).
 - Working tree clean (commit leftovers that belong to the spec; ask about anything else).
-- `gh auth status` works (otherwise tell the user to run `! gh auth login`).
+- `gh auth status` works, unless a `git` integration will open the PR (otherwise tell the user to run `! gh auth login`).
 
 ## 2. PR
 - `git push -u origin <branch>`.
@@ -27,7 +27,8 @@ Pushing and opening a PR is visible to the team: confirm with the user first unl
   - **Out of scope / follow-ups**.
   - Source link (Jira/GitHub issue) if any.
   The spec itself stays local; the PR body is what the team sees.
-- If the source is a Jira issue and the Atlassian MCP is available, offer to comment the PR link on it.
+- `git` integration chosen (`$RV project` → `integrations`) → create the PR with that MCP instead of `gh`, same title/body/base; `gh` stays the fallback.
+- Source is a ticket and an `issues` integration is chosen → offer to comment the PR link on it.
 
 ## 3. Close
 `python3 "$RAVEND_ROOT/scripts/ravend.py" disarm`; set spec `status: done`; append the PR URL to `## Log`.

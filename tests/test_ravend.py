@@ -121,7 +121,7 @@ class Hooks(RepoCase):
         (self.repo / "src" / "sum.js").write_text("export const sum = (a, b) => a + b;\n// changed\n")
         self.assertEqual(self.hook("stop").stdout.strip(), "")
         sh("git -c user.email=t@t -c user.name=t commit -qam fix", self.repo)
-        state = json.loads((self.data / "state" / "green.json").read_text())
+        state = json.loads((ravend.state_dir(self.repo) / "green.json").read_text())
         self.assertEqual(state["fast"], ravend.tree_fingerprint(self.repo))  # same tree after commit
 
     def test_stop_gives_up_after_max_blocks(self):
@@ -148,6 +148,89 @@ class Hooks(RepoCase):
             for event in ("session-start", "pre-edit", "post-edit", "stop"):
                 res = self.run_cli("hook", event, stdin=json.dumps({"cwd": other, "session_id": "s1"}))
                 self.assertEqual((res.returncode, res.stdout.strip()), (0, ""), event)
+
+
+class Integrations(RepoCase):
+    def test_tool_prefix_matches_claude_code_naming(self):
+        self.assertEqual(ravend.mcp_tool_prefix("claude.ai Atlassian"), "mcp__claude_ai_Atlassian")
+        self.assertEqual(ravend.mcp_tool_prefix("plugin:context7:context7"), "mcp__plugin_context7_context7")
+        self.assertEqual(ravend.mcp_tool_prefix("my-db"), "mcp__my-db")
+
+    def test_list_line_parsing_never_keeps_secrets(self):
+        row = ravend._list_line("pg: npx -y @org/postgres-mcp --password hunter2 postgres://u:p@h/db - ✔ Connected")
+        self.assertEqual((row["name"], row["status"]), ("pg", "Connected"))
+        self.assertNotIn("hunter2", json.dumps(row))
+        self.assertNotIn("u:p", json.dumps(row))
+        row = ravend._list_line("db: npx postgres://admin:pw@db.local/mcp @x/db-mcp - ✔ Connected")
+        self.assertEqual(row["hint"], "npx @x/db-mcp")
+        row = ravend._list_line("claude.ai Atlassian: https://mcp.atlassian.com/v1/sse?token=abc - ✗ Failed to connect")
+        self.assertEqual((row["hint"], row["status"]), ("mcp.atlassian.com", "Failed to connect"))
+        self.assertIsNone(ravend._list_line("Checking MCP server health…"))
+
+    def test_discovers_user_local_and_project_servers_without_secrets(self):
+        cfg = Path(self.tmp.name) / "cfg"
+        ravend.save_json(cfg / ".claude.json", {
+            "mcpServers": {"github": {"type": "http", "url": "https://api.githubcopilot.com/mcp/",
+                                      "headers": {"Authorization": "Bearer SECRET"}}},
+            "projects": {str(self.repo): {"mcpServers": {"pw": {"command": "npx", "args": ["@playwright/mcp@1"],
+                                                                "env": {"TOKEN": "SECRET"}}}}}})
+        ravend.save_json(self.repo / ".mcp.json", {"mcpServers": {"serena": {"command": "uvx", "args": ["serena-mcp"]}}})
+        os.environ["CLAUDE_CONFIG_DIR"] = str(cfg)
+        try:
+            rows = {r["name"]: r for r in ravend.mcp_servers(self.repo, probe=False)}
+        finally:
+            os.environ.pop("CLAUDE_CONFIG_DIR")
+        self.assertEqual({n: r["source"] for n, r in rows.items()},
+                         {"github": "user", "pw": "local", "serena": "project"})
+        self.assertEqual(rows["pw"]["hint"], "npx @playwright/mcp@1")
+        self.assertNotIn("SECRET", json.dumps(rows))
+
+    def test_integrations_are_filtered_by_stage_and_injected_at_session_start(self):
+        profile = json.loads((self.data / "profile.json").read_text())
+        profile["integrations"] = {"issues": ["claude.ai Atlassian"], "browser": ["playwright"], "empty": []}
+        ravend.save_json(self.data / "profile.json", profile)
+        self.assertEqual(list(ravend.integrations(profile, "spec")), ["issues"])
+        self.assertEqual(ravend.integration_tools(profile, "verify"), ["mcp__playwright"])
+        self.assertNotIn("empty", ravend.integrations(profile))
+        out = self.hook("session-start").stdout
+        self.assertIn("issues→claude.ai Atlassian [spec]", out)
+        project = json.loads(self.run_cli("project").stdout)
+        self.assertEqual(project["integrations"]["browser"]["tools"], ["mcp__playwright"])
+
+
+class Checkouts(RepoCase):
+    def test_worktrees_keep_separate_gate_state(self):
+        wt = Path(self.tmp.name) / "repo-wt"
+        sh(f"git worktree add -q -b feat/x {wt}", self.repo)
+        self.assertEqual(ravend.data_dir(wt), self.data)  # specs/knowledge shared
+        self.assertNotEqual(ravend.state_dir(wt), ravend.state_dir(self.repo))
+        (wt / "src" / "sum.js").write_text("export const sum = (a, b) => a - b;\n")
+        self.assertEqual(subprocess.run([sys.executable, str(SCRIPT), "gate", "full"], cwd=wt, capture_output=True,
+                                        env=os.environ.copy()).returncode, 1)
+        self.assertEqual(self.run_cli("gate", "full").returncode, 0)
+        self.assertEqual(json.loads((ravend.state_dir(wt) / "last-gate-full.json").read_text())["status"], "FAIL")
+        self.assertEqual(json.loads((ravend.state_dir(self.repo) / "last-gate-full.json").read_text())["status"], "PASS")
+
+    def test_non_blocking_lock_reports_busy(self):
+        lock = Path(self.tmp.name) / "x.lock"
+        with ravend.file_lock(lock, blocking=False) as first:
+            with ravend.file_lock(lock, blocking=False) as second:
+                self.assertEqual((first, second), (True, ravend.fcntl is None))
+
+
+class TerminalCommand(RepoCase):
+    def test_install_cli_finds_installed_plugin_and_forwards(self):
+        cfg, bindir = Path(self.tmp.name) / "cfg", Path(self.tmp.name) / "bin"
+        ravend.save_json(cfg / "plugins" / "installed_plugins.json", {"version": 2, "plugins": {
+            "ravend@ravend": [{"scope": "user", "installPath": str(SCRIPT.parent.parent)}]}})
+        self.assertEqual(self.run_cli("install-cli", "--dir", str(bindir)).returncode, 0)
+        env = {"CLAUDE_CONFIG_DIR": str(cfg)}
+        res = subprocess.run([str(bindir / "ravend"), "status"], cwd=self.repo, capture_output=True, text=True,
+                             env={**os.environ, **env})
+        self.assertIn("profile yes", res.stdout)
+        res = subprocess.run([str(bindir / "ravend"), "run", "--help"], cwd=self.repo, capture_output=True, text=True,
+                             env={**os.environ, **env})
+        self.assertIn("usage: ravend run", res.stdout)
 
 
 if __name__ == "__main__":

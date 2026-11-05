@@ -13,12 +13,13 @@ Goal: the smallest spec that lets the work be built and verified without guessin
 ## 0. Locate project data
 Run `python3 "$RAVEND_ROOT/scripts/ravend.py" project` (if `RAVEND_ROOT` is empty, use this skill's base directory + `/../../scripts/ravend.py`). It prints `data_dir`. If `has_profile` is false, tell the user to run `/ravend:init` first (headless: proceed anyway, gate will be unavailable).
 Specs live in `<data_dir>/specs/<slug>/spec.md` — on the developer's machine, never in the repo.
+The same output has `integrations`: MCP servers the developer chose per role. Here use `issues`/`git` for intake, `context` to explore code, `knowledge` for internal docs/decisions, `design` for UI frames, `database` for the real schema, `observability` for bug evidence (stack trace, frequency, first seen). A chosen server that is not connected → continue without it and say so in one line.
 
 ## 1. Intake
-- Jira key → read it with the Atlassian MCP tools if available; otherwise ask the user to paste it (headless: fail with a blocking question).
-- GitHub issue → `gh issue view <n> --json title,body,labels,comments`.
+- Jira key → read it with the `issues` integration (or any Atlassian MCP tools available); otherwise ask the user to paste it (headless: fail with a blocking question).
+- GitHub issue → the `git`/`issues` integration if chosen, else `gh issue view <n> --json title,body,labels,comments`.
 - Free text → use as is.
-Then read only what is needed to understand the affected area: entry points, the module(s) touched, one or two similar existing features. Use the `Explore` agent for broad searches so file dumps stay out of this context.
+Then read only what is needed to understand the affected area: entry points, the module(s) touched, one or two similar existing features. Prefer the `context` integration for semantic search; otherwise use the `Explore` agent for broad searches so file dumps stay out of this context.
 
 ## 2. Classify the tier (decide, state it in one line, move on)
 | Tier | Signals | Output |

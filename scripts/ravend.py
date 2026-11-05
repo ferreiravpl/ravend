@@ -9,15 +9,18 @@ outside the repository, under $RAVEND_HOME (default ~/.ravend)/projects/<project
     knowledge/     lessons learned (index.md + one file per lesson)
     specs/<slug>/  spec.md, review-N.md, verify.md, evidence/
     runs/          gate and app logs
-    state/         gate state (armed session, last green tree, block counter)
+    state/<checkout>/  gate state per clone/worktree (armed session, last green tree, block counter, app pids)
 
 Usage:
-    ravend.py project                    print project identity/paths as JSON
+    ravend.py project                    print project identity/paths/integrations as JSON
     ravend.py detect                     print detected stacks/tooling as JSON
+    ravend.py mcp [--no-probe]           list the developer's MCP servers (user/local/project/plugins/claude.ai)
+    ravend.py integrations [--stage S]   MCP servers chosen per role in profile.json
     ravend.py gate [fast|full] [--dry-run] [--scope worktree|branch]
     ravend.py app start|stop|status
     ravend.py arm | disarm               enable/disable the Stop-hook gate for this session
     ravend.py status [--json]            active specs + last gate result
+    ravend.py install-cli [--dir DIR]    install the `ravend` terminal command (default ~/.local/bin)
     ravend.py hook <session-start|pre-edit|post-edit|stop>   (stdin: hook JSON)
 """
 from __future__ import annotations
@@ -35,9 +38,16 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.parse
 import urllib.request
+from contextlib import ExitStack, contextmanager
 from datetime import datetime
 from pathlib import Path
+
+try:
+    import fcntl
+except ImportError:  # Windows: no cross-process locks (native Windows is unsupported anyway)
+    fcntl = None
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_PROTECTED = [".env", ".env.local", ".env.*.local", "*.pem", "*.key", "*id_rsa*"]
@@ -88,6 +98,36 @@ def project_id(root: Path) -> str:
 
 def data_dir(root: Path) -> Path:
     return ravend_home() / "projects" / project_id(root)
+
+
+def state_dir(root: Path) -> Path:
+    """Gate/app state is per checkout: the main clone and each git worktree get their own, so parallel
+    runs on different worktrees never overwrite each other's gate result. Specs/knowledge stay shared."""
+    key = f"{_slug(root.name) or 'repo'}-{hashlib.sha1(str(root.resolve()).encode()).hexdigest()[:8]}"
+    return data_dir(root) / "state" / key
+
+
+@contextmanager
+def file_lock(path: Path, blocking: bool = True, wait_msg: str = ""):
+    """Exclusive cross-process lock. Yields True when held, False when non-blocking and busy."""
+    if fcntl is None:
+        yield True
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a") as fh:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            if not blocking:
+                yield False
+                return
+            if wait_msg:
+                print(wait_msg, flush=True)
+            fcntl.flock(fh, fcntl.LOCK_EX)
+        try:
+            yield True
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
 
 
 def ensure_dirs(d: Path) -> None:
@@ -278,9 +318,10 @@ def gate(root: Path, mode: str = "fast", scope: str | None = None, dry_run: bool
     changed = changed_files(root, scope, profile)
     base = base_branch(root, profile)
     tail = int((profile.get("gate") or {}).get("tail_lines", 60))
-    d = data_dir(root)
-    run_dir = d / "runs" / f"gate-{mode}-{datetime.now():%Y%m%d-%H%M%S}"
+    d, st = data_dir(root), state_dir(root)
+    run_dir = d / "runs" / f"gate-{mode}-{datetime.now():%Y%m%d-%H%M%S}-{os.getpid()}"
     results, app_started = [], False
+    locks = ExitStack()
     print(f"[ravend] gate {mode} · {len(changed)} changed file(s) · scope={scope}")
     for step in steps:
         name = step.get("name", "step")
@@ -293,6 +334,9 @@ def gate(root: Path, mode: str = "fast", scope: str | None = None, dry_run: bool
             print(f"  - {name}: would run in ./{step.get('cwd', '.')}: {cmd}")
             continue
         if step.get("needs_app") and not app_started:
+            # the app binds fixed ports: worktrees running gates in parallel take turns
+            locks.enter_context(file_lock(d / "state" / "app.lock",
+                                          wait_msg="  · app: waiting — another checkout is using it"))
             ok, msg = app_start(root, profile)
             print(f"  · app: {msg}")
             if not ok:
@@ -311,6 +355,7 @@ def gate(root: Path, mode: str = "fast", scope: str | None = None, dry_run: bool
                 break
     if app_started:
         app_stop(root)
+    locks.close()
     if dry_run:
         return 0
     failed = [r for r in results if r["status"] in ("FAIL", "TIMEOUT")]
@@ -319,11 +364,11 @@ def gate(root: Path, mode: str = "fast", scope: str | None = None, dry_run: bool
     state = {"mode": mode, "status": status, "at": datetime.now().isoformat(timespec="seconds"),
              "fingerprint": tree_fingerprint(root), "steps": results}
     try:
-        save_json(d / "state" / f"last-gate-{mode}.json", state)
+        save_json(st / f"last-gate-{mode}.json", state)
         if status == "PASS":
-            green = load_json(d / "state" / "green.json", {}) or {}
+            green = load_json(st / "green.json", {}) or {}
             green[mode] = state["fingerprint"]
-            save_json(d / "state" / "green.json", green)
+            save_json(st / "green.json", green)
     except OSError:
         print("[ravend] warning: could not record gate state (data dir not writable)")
     summary = ", ".join(f"{r['name']}={r['status']}" for r in results) or "nothing to run"
@@ -350,8 +395,8 @@ def app_start(root: Path, profile: dict) -> tuple[bool, str]:
     apps = _apps(profile)
     if not apps:
         return False, "profile.app is not configured"
-    d = data_dir(root)
-    pids = load_json(d / "state" / "app.json", {}) or {}
+    d, st = data_dir(root), state_dir(root)
+    pids = load_json(st / "app.json", {}) or {}
     for app in apps:
         name = app.get("name", "app")
         url = app.get("healthcheck")
@@ -363,7 +408,7 @@ def app_start(root: Path, profile: dict) -> tuple[bool, str]:
         proc = subprocess.Popen(app["start"], shell=True, cwd=root / app.get("cwd", "."), stdout=fh,
                                 stderr=subprocess.STDOUT, start_new_session=True)
         pids[name] = proc.pid
-        save_json(d / "state" / "app.json", pids)
+        save_json(st / "app.json", pids)
         deadline = time.time() + int(app.get("timeout", 180))
         while url and time.time() < deadline:
             if proc.poll() is not None:
@@ -378,10 +423,183 @@ def app_start(root: Path, profile: dict) -> tuple[bool, str]:
 
 
 def app_stop(root: Path) -> None:
-    d = data_dir(root)
-    for pid in (load_json(d / "state" / "app.json", {}) or {}).values():
+    st = state_dir(root)
+    for pid in (load_json(st / "app.json", {}) or {}).values():
         _kill_group(int(pid))
-    save_json(d / "state" / "app.json", {})
+    save_json(st / "app.json", {})
+
+
+# --------------------------------------------------------------------------- MCP integrations
+# The developer's own MCP servers, mapped to the roles the pipeline knows how to use. The mapping lives in
+# profile.json ("integrations": {role: [server name, ...]}) and is written by /ravend:init after asking.
+
+ROLES = {
+    "issues":        ("Issue tracker: read tickets/acceptance notes (Jira, Linear, GitHub/GitLab issues)", ["spec"]),
+    "git":           ("Git hosting: issues, PRs, CI checks, review comments (GitHub, GitLab, Bitbucket)",
+                      ["spec", "review", "ship"]),
+    "context":       ("Code context: semantic search, symbol navigation, codebase index (Serena, Sourcegraph…)",
+                      ["spec", "build", "review"]),
+    "docs":          ("Library/framework documentation, version-correct APIs (Context7, vendor docs)", ["spec", "build"]),
+    "knowledge":     ("Internal docs and decisions: wiki, ADRs, product docs (Confluence, Notion, Drive)", ["spec"]),
+    "design":        ("UI design source: frames, tokens, specs (Figma)", ["spec", "build", "verify"]),
+    "browser":       ("Drive a browser to explore UI for E2E/visual tests (Playwright, Chrome DevTools)", ["verify"]),
+    "api":           ("Call/test HTTP APIs, collections, contracts (Postman, api-test)", ["verify"]),
+    "database":      ("Inspect schema and data (Postgres, MySQL, Mongo…), read-only", ["spec", "build", "verify"]),
+    "observability": ("Errors, logs, traces, metrics (Sentry, Datadog, Grafana)", ["spec", "verify"]),
+}
+STAGES = ["spec", "build", "verify", "review", "ship"]
+
+
+def mcp_tool_prefix(server: str) -> str:
+    """Permission/tool prefix Claude Code gives a server's tools: mcp__<name with non [A-Za-z0-9_-] as _>."""
+    return "mcp__" + re.sub(r"[^A-Za-z0-9_-]", "_", server)
+
+
+def claude_config_file() -> Path:
+    cfg = os.environ.get("CLAUDE_CONFIG_DIR")
+    return Path(cfg) / ".claude.json" if cfg else Path.home() / ".claude.json"
+
+
+def _mcp_hint(conf: dict) -> tuple[str, str]:
+    """(transport, short non-secret hint) — never args with values, env or headers."""
+    if conf.get("url"):
+        return conf.get("type", "http"), urllib.parse.urlparse(conf["url"]).netloc
+    words = [conf.get("command", "")] + [a for a in conf.get("args", []) if isinstance(a, str)]
+    pkg = next((w for w in words[1:] if not w.startswith("-") and not re.search(r"[:=]", w)
+                and ("mcp" in w.lower() or w.startswith("@"))), "")
+    return "stdio", " ".join(x for x in (Path(words[0]).name, pkg) if x)
+
+
+def _list_line(line: str) -> dict | None:
+    """Parse one `claude mcp list` line: `<name>: <command or url> - <status>`."""
+    m = re.match(r"^(?P<name>[^\s].*?): (?P<target>.+) - (?P<status>[^-]+)$", line.strip())
+    if not m:
+        return None
+    target = m.group("target").strip()
+    if re.match(r"^https?://", target):
+        transport, hint = "http", urllib.parse.urlparse(target).netloc
+    else:
+        transport, hint = _mcp_hint({"command": target.split(" ")[0], "args": target.split(" ")[1:]})
+    return {"name": m.group("name").strip(), "transport": transport, "hint": hint,
+            "status": re.sub(r"^[^\w]+", "", m.group("status").strip())}
+
+
+def mcp_servers(root: Path, probe: bool = True) -> list[dict]:
+    """Every MCP server the developer has for this repo. Config files first (fast, offline); then
+    `claude mcp list`, which also sees plugin servers and claude.ai connectors and reports health."""
+    found: dict[str, dict] = {}
+
+    def add(name: str, source: str, conf: dict | None = None, **extra) -> None:
+        row = found.setdefault(name, {"name": name, "source": source, "tools": mcp_tool_prefix(name)})
+        if conf is not None:
+            row["transport"], row["hint"] = _mcp_hint(conf)
+        row.update({k: v for k, v in extra.items() if v})
+
+    cfg = load_json(claude_config_file(), {}) or {}
+    for name, conf in (cfg.get("mcpServers") or {}).items():
+        add(name, "user", conf)
+    for name, conf in (((cfg.get("projects") or {}).get(str(root)) or {}).get("mcpServers") or {}).items():
+        add(name, "local", conf)
+    for name, conf in ((load_json(root / ".mcp.json", {}) or {}).get("mcpServers") or {}).items():
+        add(name, "project", conf)
+    if probe and shutil.which("claude"):
+        try:
+            out = subprocess.run(["claude", "mcp", "list"], cwd=root, capture_output=True, text=True,
+                                 timeout=90).stdout
+        except (OSError, subprocess.TimeoutExpired):
+            out = ""
+        for line in out.splitlines():
+            row = _list_line(line)
+            if not row:
+                continue
+            source = ("claude.ai" if row["name"].startswith("claude.ai ") else
+                      "plugin" if row["name"].startswith("plugin:") else "listed")
+            known = found.get(row["name"])
+            add(row["name"], known["source"] if known else source, status=row["status"],
+                transport=None if known and known.get("transport") else row["transport"],
+                hint=None if known and known.get("hint") else row["hint"])
+    return sorted(found.values(), key=lambda r: (r["source"], r["name"].lower()))
+
+
+def integrations(profile: dict | None, stage: str | None = None) -> dict:
+    """{role: {"servers": [...], "tools": [mcp__…], "stages": [...], "purpose": ...}} from profile.integrations."""
+    out = {}
+    for role, servers in ((profile or {}).get("integrations") or {}).items():
+        servers = [servers] if isinstance(servers, str) else [s for s in (servers or []) if isinstance(s, str)]
+        if not servers:
+            continue
+        purpose, stages = ROLES.get(role, ("custom role", STAGES))
+        if stage and stage not in stages:
+            continue
+        out[role] = {"servers": servers, "tools": [mcp_tool_prefix(s) for s in servers],
+                     "stages": stages, "purpose": purpose}
+    return out
+
+
+def integration_tools(profile: dict | None, stage: str | None = None) -> list[str]:
+    return list(dict.fromkeys(t for r in integrations(profile, stage).values() for t in r["tools"]))
+
+
+def local_mcp_config(root: Path) -> dict:
+    """Local-scope servers of this checkout (keyed by path in ~/.claude.json). A git worktree has another
+    path, so the headless runner passes these explicitly when it works in a worktree."""
+    cfg = load_json(claude_config_file(), {}) or {}
+    return dict((((cfg.get("projects") or {}).get(str(root)) or {}).get("mcpServers") or {}))
+
+
+# --------------------------------------------------------------------------- terminal command
+
+CLI_SHIM = """#!/usr/bin/env python3
+# `ravend` terminal command, installed by `ravend.py install-cli`. Finds the installed Ravend plugin
+# (newest install, so plugin updates are picked up) and forwards: `ravend run ...` -> ravend_run.py,
+# anything else -> ravend.py (gate, status, mcp, ...).
+import json, os, sys
+from pathlib import Path
+
+FALLBACK = {fallback!r}
+
+
+def plugin_root():
+    cfg = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+    try:
+        data = json.loads((cfg / "plugins" / "installed_plugins.json").read_text(encoding="utf-8"))
+        for key, entries in (data.get("plugins") or {{}}).items():
+            for entry in reversed(entries if key.split("@")[0] == "ravend" else []):
+                path = Path(entry.get("installPath", ""))
+                if (path / "scripts" / "ravend.py").exists():
+                    return path
+    except (OSError, ValueError, AttributeError):
+        pass
+    return Path(FALLBACK)
+
+
+args = sys.argv[1:]
+script = "ravend.py"
+if args[:1] == ["run"]:
+    script, args = "ravend_run.py", args[1:]
+elif args[:1] in (["help"], ["-h"], ["--help"]) or not args:
+    print("ravend run \\"<demand>\\" [options]   pipeline without supervision (ravend run --help)\\n"
+          "ravend gate fast|full [--dry-run]  quality gate of this checkout\\n"
+          "ravend status                      active specs + last gate\\n"
+          "ravend mcp                         your MCP servers · ravend integrations: the ones Ravend uses")
+    sys.exit(0)
+target = plugin_root() / "scripts" / script
+if not target.exists():
+    sys.exit(f"ravend: plugin not found ({{target}}). Reinstall with /plugin install ravend")
+os.execv(sys.executable, [sys.executable, str(target), *args])
+"""
+
+
+def install_cli(target_dir: Path) -> int:
+    target_dir.mkdir(parents=True, exist_ok=True)
+    path = target_dir / "ravend"
+    path.write_text(CLI_SHIM.format(fallback=str(PLUGIN_ROOT)), encoding="utf-8")
+    path.chmod(0o755)
+    print(f"[ravend] installed {path}")
+    on_path = any(Path(p).resolve() == target_dir.resolve() for p in os.environ.get("PATH", "").split(os.pathsep) if p)
+    if not on_path:
+        print(f"[ravend] {target_dir} is not on PATH — add to your shell rc: export PATH=\"{target_dir}:$PATH\"")
+    return 0
 
 
 # --------------------------------------------------------------------------- detection
@@ -470,9 +688,9 @@ def status(root: Path, as_json: bool) -> int:
     d = data_dir(root)
     data = {"project_id": project_id(root), "data_dir": str(d), "has_profile": (d / "profile.json").exists(),
             "specs": specs_status(d),
-            "last_gate": {m: load_json(d / "state" / f"last-gate-{m}.json") for m in ("fast", "full")},
-            "tree": tree_fingerprint(root), "green": load_json(d / "state" / "green.json", {}),
-            "armed": load_json(d / "state" / "armed.json")}
+            "last_gate": {m: load_json(state_dir(root) / f"last-gate-{m}.json") for m in ("fast", "full")},
+            "tree": tree_fingerprint(root), "green": load_json(state_dir(root) / "green.json", {}),
+            "armed": load_json(state_dir(root) / "armed.json"), "integrations": integrations(load_profile(root))}
     if as_json:
         print(json.dumps(data, indent=2, ensure_ascii=False))
         return 0
@@ -517,10 +735,16 @@ def hook_session_start(inp: dict) -> int:
     cli = f"python3 {PLUGIN_ROOT}/scripts/ravend.py"
     if not profile:
         if any((root / f).exists() for f in ("pom.xml", "build.gradle", "build.gradle.kts", "package.json")):
-            print("[ravend] This repo has no local Ravend profile. Pipeline commands need /ravend:init first.")
+            print("[ravend] This repo has no local Ravend profile. Run /ravend:init once (it detects the gate "
+                  "commands and lets the developer pick which of their MCP servers the pipeline should use).")
         return 0
     out = [f"[ravend] project `{project_id(root)}` — local data dir (never committed): {d}",
            f"stacks: {', '.join(profile.get('stacks', [])) or '?'} · gate: `{cli} gate fast|full` · status: `{cli} status`"]
+    chosen = integrations(profile)
+    if chosen:
+        out.append("integrations (the developer's MCP servers for each role — prefer them in the listed stages; "
+                   "skip one that is not connected): " + " · ".join(
+                       f"{role}→{', '.join(r['servers'])} [{'/'.join(r['stages'])}]" for role, r in chosen.items()))
     notes = d / "project.md"
     if notes.exists():
         body = _read(notes).strip().splitlines()
@@ -605,14 +829,14 @@ def hook_stop(inp: dict) -> int:
     profile = load_profile(root) if root else None
     if not profile:
         return 0
-    d = data_dir(root)
-    armed = load_json(d / "state" / "armed.json")
+    st = state_dir(root)
+    armed = load_json(st / "armed.json")
     if not armed or armed.get("session") not in ("*", inp.get("session_id")):
         return 0
     tree = tree_fingerprint(root)
-    if tree and tree == (load_json(d / "state" / "green.json", {}) or {}).get("fast"):
+    if tree and tree == (load_json(st / "green.json", {}) or {}).get("fast"):
         return 0
-    blocks_file = d / "state" / "stop-blocks.json"
+    blocks_file = st / "stop-blocks.json"
     blocks = (load_json(blocks_file, {}) or {}).get("count", 0)
     max_blocks = int((profile.get("gate") or {}).get("max_stop_blocks", 3))
     buf = io.StringIO()
@@ -658,6 +882,9 @@ def main(argv: list[str]) -> int:
         except Exception as exc:  # a broken hook must never break the session
             print(f"[ravend] hook {rest[0]} error: {exc}", file=sys.stderr)
             return 0
+    if cmd == "install-cli":
+        target = Path(rest[rest.index("--dir") + 1]).expanduser() if "--dir" in rest else Path.home() / ".local" / "bin"
+        return install_cli(target)
     root = repo_root(Path.cwd())
     if not root:
         print("[ravend] not inside a git repository", file=sys.stderr)
@@ -668,7 +895,16 @@ def main(argv: list[str]) -> int:
         print(json.dumps({"project_id": project_id(root), "root": str(root), "data_dir": str(d),
                           "has_profile": (d / "profile.json").exists(),
                           "base_branch": base_branch(root, load_profile(root)),
-                          "plugin_root": str(PLUGIN_ROOT)}, indent=2))
+                          "plugin_root": str(PLUGIN_ROOT),
+                          "integrations": integrations(load_profile(root))}, indent=2, ensure_ascii=False))
+        return 0
+    if cmd == "mcp":
+        print(json.dumps(mcp_servers(root, probe="--no-probe" not in rest), indent=2, ensure_ascii=False))
+        return 0
+    if cmd == "integrations":
+        stage = rest[rest.index("--stage") + 1] if "--stage" in rest else None
+        print(json.dumps({"roles": {k: v[0] for k, v in ROLES.items()},
+                          "chosen": integrations(load_profile(root), stage)}, indent=2, ensure_ascii=False))
         return 0
     if cmd == "detect":
         print(json.dumps(detect(root), indent=2))
@@ -693,18 +929,18 @@ def main(argv: list[str]) -> int:
             print(f"{app.get('name', 'app')}: {'UP' if url and _http_ok(url) else 'DOWN'} {url or ''}")
         return 0
     if cmd in ("arm", "disarm"):
-        d = data_dir(root)
+        st = state_dir(root)
         try:
             if cmd == "arm":
-                save_json(d / "state" / "armed.json", {"session": os.environ.get("RAVEND_SESSION_ID") or "*",
-                                                       "at": datetime.now().isoformat(timespec="seconds")})
-                save_json(d / "state" / "stop-blocks.json", {"count": 0})
+                save_json(st / "armed.json", {"session": os.environ.get("RAVEND_SESSION_ID") or "*",
+                                              "at": datetime.now().isoformat(timespec="seconds")})
+                save_json(st / "stop-blocks.json", {"count": 0})
                 print("[ravend] Stop-hook gate armed for this session")
             else:
-                (d / "state" / "armed.json").unlink(missing_ok=True)
+                (st / "armed.json").unlink(missing_ok=True)
                 print("[ravend] Stop-hook gate disarmed")
         except OSError as exc:
-            print(f"[ravend] could not {cmd} the Stop-hook gate ({exc.strerror}: {d / 'state'}). "
+            print(f"[ravend] could not {cmd} the Stop-hook gate ({exc.strerror}: {st}). "
                   "Run the gate manually before finishing each task.", file=sys.stderr)
             return 1
         return 0

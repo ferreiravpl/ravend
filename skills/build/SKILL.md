@@ -14,6 +14,7 @@ argument-hint: <slug | trivial change description> [--fix gate|verify|review] [-
 - Spec `status: draft` → interactive: ask for approval; headless without `--approved`: report blocked.
 - Branch: if on `base_branch`, `git switch -c <spec.branch>` (or reuse it). If the tree has unrelated uncommitted changes, stop and ask — never mix them in.
 - Arm the Stop-hook gate: `$RV arm`. Set spec `status: in-progress`.
+- Integrations (`$RV project` → `integrations`, roles for `build`): `docs` for the APIs of the library versions in use, `context` to find similar features and usages, `design` for UI tasks, `database` to check the real schema (read-only). Pass the relevant server names to `ravend:implementer` agents.
 - Load the stack skill(s) of the modules you will touch (`ravend:stack-spring`, `ravend:stack-quarkus`, `ravend:stack-angular`, `ravend:stack-react`). Read `<data_dir>/project.md` conventions if not already in context.
 
 ## 1. Pick work

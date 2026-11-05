@@ -5,11 +5,14 @@ The control loop lives here (deterministic code); the model is only called insid
 `claude -p` with a JSON schema. The quality gate is re-run by this script itself, so a stage can
 never "claim" green.
 
-Examples:
-    ravend_run.py "Add pagination to GET /products"            # stops after spec if tier=large
-    ravend_run.py PROJ-123 --yes --until review                 # no human checkpoint, no PR
-    ravend_run.py --resume add-product-pagination --until pr    # continue after approving the spec
-    ravend_run.py "..." --worktree --budget-usd 3 --permission-mode bypassPermissions  # in a sandbox
+Examples (`ravend run` once the terminal command is installed; otherwise `python3 .../ravend_run.py`):
+    ravend run "Add pagination to GET /products"            # stops after spec if tier=large
+    ravend run PROJ-123 --yes --until review                 # no human checkpoint, no PR
+    ravend run --resume add-product-pagination --until pr    # continue after approving the spec
+    ravend run "#45" --worktree                              # own worktree: run several demands in parallel
+    ravend run "..." --budget-usd 3 --permission-mode bypassPermissions   # in a sandbox/container
+
+The developer's MCP servers chosen in profile.json `integrations` are allowed in the stages of their role.
 
 Exit codes: 0 done (or paused at a checkpoint), 1 failed, 2 misconfigured, 3 needs a human.
 """
@@ -22,6 +25,8 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
+from contextlib import ExitStack
 from datetime import datetime
 from pathlib import Path
 
@@ -67,11 +72,13 @@ class Runner:
         self.args, self.root, self.cwd = args, root, root
         self.profile = ravend.load_profile(root) or {}
         self.data = ravend.data_dir(root)
-        self.log_dir = self.data / "runs" / f"headless-{datetime.now():%Y%m%d-%H%M%S}"
+        self.log_dir = self.data / "runs" / f"headless-{datetime.now():%Y%m%d-%H%M%S}-{os.getpid()}"
         self.log_dir.mkdir(parents=True, exist_ok=True)
         self.cost = 0.0
         self.calls = 0
         self.plugin_dir = None if self._plugin_installed() else str(ravend.PLUGIN_ROOT)
+        self.mcp_config: str | None = None
+        self.resources = ExitStack()
 
     # ------------------------------------------------------------------ helpers
     def say(self, msg: str) -> None:
@@ -85,10 +92,13 @@ class Runner:
             return False
         return re.search(r"\bravend@", out) is not None
 
-    def allowed_tools(self, ship: bool = False) -> list[str]:
+    def allowed_tools(self, stage: str = "build") -> list[str]:
+        role_stage = {"pr": "ship", "fix-verify": "build", "fix-review": "build"}.get(stage, stage)
         tools = ["Read", "Edit", "Write", "MultiEdit", "Glob", "Grep", "Skill", "Agent", "TodoWrite",
-                 "Bash(git *)", f"Bash(python3 {ravend.PLUGIN_ROOT}/scripts/ravend.py *)", "Bash(mkdir *)",
-                 "mcp__playwright"]
+                 "Bash(git *)", f"Bash(python3 {ravend.PLUGIN_ROOT}/scripts/ravend.py *)", "Bash(mkdir *)"]
+        tools += ravend.integration_tools(self.profile, role_stage)
+        if role_stage == "verify" and "browser" not in ravend.integrations(self.profile):
+            tools.append("mcp__playwright")  # the server /ravend:init suggests when no browser MCP was chosen
         commands = [s.get("run", "") for mode in ("fast", "full") for s in (self.profile.get("gate") or {}).get(mode, [])]
         commands += [a.get("start", "") for a in ravend._apps(self.profile)]
         for cmd in commands:
@@ -96,13 +106,15 @@ class Runner:
             if first and not first.startswith("{"):
                 tools.append(f"Bash({first} *)")
         tools += (self.profile.get("headless") or {}).get("allowed_tools", [])
-        if ship:
+        if role_stage == "ship":
             tools.append("Bash(gh *)")
         return list(dict.fromkeys(tools))
 
-    def claude(self, stage: str, prompt: str, schema: dict, ship: bool = False) -> dict:
+    def claude(self, stage: str, prompt: str, schema: dict) -> dict:
         cmd = ["claude", "-p", prompt, "--output-format", "json", "--json-schema", json.dumps(schema),
-               "--permission-mode", self.args.permission_mode, "--allowedTools", *self.allowed_tools(ship)]
+               "--permission-mode", self.args.permission_mode, "--allowedTools", *self.allowed_tools(stage)]
+        if self.mcp_config:
+            cmd += ["--mcp-config", self.mcp_config]
         if self.args.budget_usd:
             cmd += ["--max-budget-usd", str(self.args.budget_usd)]
         if self.args.model:
@@ -167,9 +179,29 @@ class Runner:
                 raise SystemExit(self.fail(f"could not create worktree {path}", 2))
         self.cwd = path
         self.say(f"worktree: {path} (branch {branch})")
+        # local-scope MCP servers are registered for the main checkout's path only; bring them along
+        local = ravend.local_mcp_config(self.root)
+        if local:
+            tmp = self.resources.enter_context(tempfile.TemporaryDirectory(prefix="ravend-mcp-"))
+            cfg = Path(tmp) / "mcp.json"  # may hold tokens: private temp dir, removed when the run ends
+            cfg.write_text(json.dumps({"mcpServers": local}), encoding="utf-8")
+            cfg.chmod(0o600)
+            self.mcp_config = str(cfg)
+            self.say(f"worktree: passing {len(local)} local MCP server(s): {', '.join(sorted(local))}")
 
     # ------------------------------------------------------------------ pipeline
     def run(self) -> int:
+        try:
+            return self._run()
+        finally:
+            self.resources.close()
+
+    def lock_checkout(self) -> bool:
+        """One unattended run per checkout: two runs in the same working tree would mix branches and edits."""
+        held = self.resources.enter_context(ravend.file_lock(ravend.state_dir(self.cwd) / "run.lock", blocking=False))
+        return bool(held)
+
+    def _run(self) -> int:
         a = self.args
         if not self.profile:
             return self.fail("no local profile — run /ravend:init interactively once in this repo", 2)
@@ -197,6 +229,9 @@ class Runner:
                 return 0
         if a.worktree:
             self.worktree(slug)
+        if not self.lock_checkout():
+            return self.fail(f"another `ravend run` is already working in {self.cwd} — use --worktree to run "
+                             "demands in parallel", 2)
 
         build = self.claude("build", f"/ravend:build {slug}{flags}", BUILD_SCHEMA)
         if build["status"] == "blocked":
@@ -236,14 +271,15 @@ class Runner:
             self.summary()
             return 0
 
-        ship = self.claude("ship", f"/ravend:ship {slug}{flags} --yes", SHIP_SCHEMA, ship=True)
+        ship = self.claude("ship", f"/ravend:ship {slug}{flags} --yes", SHIP_SCHEMA)
         self.say(f"PR: {ship['pr_url']}")
         self.summary()
         return 0
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p = argparse.ArgumentParser(prog="ravend run", description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("demand", nargs="?", help="free text, Jira key (PROJ-123) or GitHub issue (#45 / URL)")
     p.add_argument("--resume", metavar="SLUG", help="continue an existing spec (treated as approved)")
     p.add_argument("--until", choices=STAGES, default="review", help="last stage to run (default: review)")
