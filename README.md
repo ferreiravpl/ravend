@@ -1,428 +1,265 @@
 <div align="center">
-<img src="./imgs/ravend-logo.png" alt="Ravend" width="180" />
-</div>
+<img src="./imgs/ravend-logo.png" alt="Ravend" width="160" />
 
 # Ravend
-**Orquestre desenvolvimento assistido por IA com disciplina estruturada — do intake ao código em produção.**
 
-Um harness agentic para substituir prompts dispersos, tracking manual de tarefas e ciclos de review copiados e colados. Ravend conduz o ciclo completo de desenvolvimento assistido por IA dentro do [OpenCode](https://opencode.ai): intake de demanda, especificação de produto, design técnico, decomposição de tarefas, implementação, QA, review e aceite iterativo — tudo com contexto mínimo, estado persistente e especialização por stack.
+**Pipeline de entrega spec-driven para o Claude Code — da demanda ao código testado, com gates de qualidade que o modelo não consegue pular.**
+</div>
 
-> **Construção ativa** — Este projeto está em desenvolvimento. Estrutura, skills e comandos podem mudar.
+Ravend é um plugin do [Claude Code](https://claude.com/claude-code). Ele conduz uma demanda (texto, issue do Jira ou do GitHub) pelo caminho **spec → build test-first → verify → review independente → PR**. A profundidade do processo é proporcional ao tamanho da mudança. Tudo que precisa ser garantido roda em código (hooks e scripts), não em instruções de prompt.
+
+```
+demanda ──▶ /ravend:spec ──▶ [você aprova]* ──▶ /ravend:build ──▶ /ravend:verify ──▶ /ravend:review ──▶ [você aprova] ──▶ /ravend:ship ──▶ PR
+              nível                              red→green→gate    gate full +         reviewer com         push + PR com
+              trivial/small/large/bug            por task, commit  critérios→testes    contexto limpo       evidências
+                                                                    E2E Playwright      P0/P1/P2
+* só para mudanças "large"
+```
 
 ---
 
-## Destaques
-
-- **Disciplina Estruturada de Desenvolvimento (SDD).** Um pipeline comprovado: intake → PRD → tech spec → decomposição → implementação → QA → review → loop até aceite. Cada fase produz artefatos markdown que alimentam a próxima. Comece de uma demanda bruta para rastreabilidade completa, ou pule direto para implementação quando o escopo já estiver claro.
-
-- **QA com build real.** O agente QA não apenas sugere testes — ele executa build, compilação, testes com escopo restrito, lint gate (checkstyle + ESLint) e guardrail validators. PASS/FAIL baseado em exit codes, nunca em julgamento subjetivo. Fallback graceful quando ferramentas não estão disponíveis.
-
-- **QA backend + frontend de verdade.** Backend: build, testes unitários, lint, guardrails **e validação de API em runtime** via MCP `api-test` — sobe a aplicação, exercita os endpoints do escopo e asserta status/contrato (com import de spec OpenAPI quando disponível). Frontend: build, testes e **E2E em navegador real** via MCP Playwright com screenshot de evidência. Tudo opcional com fallback: indisponibilidade vira SKIP com nota, nunca bloqueia o gate.
-
-- **Review com score determinístico.** O reviewer produz score 0-100 com regras de dedução objetivas, classifica findings em P0 (bloqueante), P1 (deve corrigir) e P2 (opcional), e gera ações obrigatórias numeradas quando reprova. Aprovação exige score ≥ 95 e zero P0/P1.
-
-- **Loop de qualidade com convergência garantida.** O orchestrator coordena o ciclo implementer → QA → reviewer → correção → QA → reviewer com limites claros: max 3 iterações de review, max 2 retries de QA, score delta rule (+5 mínimo entre iterações) e escalada automática para humano quando o loop não converge.
-
-- **Roteamento por stack.** Ravend detecta a stack dominante (Quarkus, Spring, Angular) e carrega skills especializadas sob demanda — checklists de implementação, padrões de review e convenções específicas do seu framework. Nada de conselho genérico; cada ação é fundamentada na realidade da sua codebase.
-
-- **Guardrails de código.** Cinco guardrails protegem contra problemas recorrentes: tamanho de classe (150 linhas), formatação (140 chars), nomenclatura de testes (snake_case), economia de contexto (max 3 skills) e escopo mínimo (não expandir). Cada guardrail tem severidade, applyTo por agente e comandos de verificação executáveis.
-
-- **Knowledge base pré-seeded com anti-patterns.** 10 anti-patterns cobrindo Spring, Quarkus, Angular e Java genérico — de field injection a subscribe sem cleanup. Regra de frequência: padrões vistos 3+ vezes viram hard constraint (equivalente a P0). Write-back segmentado por stack.
-
-- **Minimalismo de contexto.** Sem despejar o repositório inteiro. Ravend carrega apenas o contexto necessário para a fase e tarefa atual, persiste estado em arquivos e compacta sessões longas automaticamente. Resultado: menor custo de tokens, execução mais rápida e menos risco de alucinação.
-
-- **Estado persistente, fluxos retomáveis.** Cada execução SDD persiste seu estado em `.lla/sdd/current/`, com isolamento por task: artefatos por task em `{task_id}/`, artefatos compartilhados da demanda em `shared/`. Tasks concluídas são arquivadas em `~/.ravend/archive/` (fora do repo). Interrompa um fluxo, feche sua sessão e retome exatamente de onde parou com `/sdd-resume`. Sem contexto perdido, sem trabalho repetido.
-
-- **Harness auto-otimizável.** Ravend pode auditar e evoluir sua própria configuração — agentes, skills, commands, arquivos de contexto e economia de tokens. Execute `/ravend-optimize` para uma análise crítica, ou `/ravend-evolve` para propor e executar melhorias incrementais.
-
-- **Captura incremental de conhecimento.** Findings recorrentes são destilados em entradas compactas e indexadas em [`.lla/knowledge/`](./.lla/knowledge/), organizadas por papel (reviewer, implementer, shared). Conhecimento é carregado seletivamente — nunca tudo de uma vez. Consulte [`knowledge-index.json`](./.lla/manifests/knowledge-index.json) para o catálogo.
-
-- **Markdown primeiro, JSON para contratos.** Markdown legível para specs, PRDs e decisões. JSON legível por máquina para manifests operacionais, schemas de output e handoffs. Tudo versionável, diffável e editável entre etapas.
+## Sumário
+- [Instalação](#instalação)
+- [Primeiros passos](#primeiros-passos)
+- [Comandos](#comandos)
+- [Como o pipeline decide o tamanho do processo](#como-o-pipeline-decide-o-tamanho-do-processo)
+- [Onde ficam os dados (local, por desenvolvedor)](#onde-ficam-os-dados-local-por-desenvolvedor)
+- [Quality gate e hooks](#quality-gate-e-hooks)
+- [Testes: unit, API e E2E](#testes-unit-api-e-e2e)
+- [Agentes](#agentes)
+- [Modo headless / CI](#modo-headless--ci)
+- [Integrações](#integrações)
+- [Custo de contexto e desempenho](#custo-de-contexto-e-desempenho)
+- [Desenvolvendo o plugin](#desenvolvendo-o-plugin)
+- [Vindo do Ravend para OpenCode](#vindo-do-ravend-para-opencode)
+- [Limitações conhecidas](#limitações-conhecidas)
 
 ---
 
-## Como Funciona
+## Instalação
 
+Requisitos: Claude Code 2.1+, `git`, **Python 3.8+** (os scripts usam só a biblioteca padrão) e `gh` autenticado, se você for usar `/ravend:ship`.
+
+```text
+/plugin install ravend --marketplace ferreiravpl/ravend
 ```
-intake → PRD → tech spec → decomposição → implementação → QA → review → aceite
-↑                                                                    │
-└────────────────────── loop até aceite ──────────────────────────────┘
+Ou em dois passos:
+```text
+/plugin marketplace add ferreiravpl/ravend
+/plugin install ravend@ravend
+```
+Reinicie a sessão do Claude Code depois de instalar.
+
+Recomendado: o plugin [`superpowers`](https://github.com/obra/superpowers) (`/plugin install superpowers@claude-plugins-official`). Ele cobre brainstorming, debugging sistemático e disciplina de TDD, e o Ravend aproveita essas skills quando estão presentes. O Ravend funciona sem ele.
+
+## Primeiros passos
+
+Em **cada repositório** onde você quer usar o pipeline (uma vez por máquina):
+
+```text
+/ravend:init
+```
+O `init` detecta stacks e módulos, lê os comandos reais do projeto (build files, scripts, CI) e gera o **perfil local** com os comandos do gate. Ele também escreve notas curtas do projeto e, se você aceitar, configura os MCPs Playwright/Context7 no escopo *local*. **Nada é escrito no repositório.**
+
+Depois:
+
+```text
+/ravend:run Adicionar paginação em GET /products e na listagem do front
+```
+ou etapa por etapa:
+```text
+/ravend:spec PROJ-123
+/ravend:build add-products-pagination
+/ravend:verify add-products-pagination
+/ravend:review add-products-pagination
+/ravend:ship add-products-pagination
 ```
 
-1. **Intake** — Normaliza uma demanda bruta, ticket ou item Jira em um brief estruturado e acionável.
-2. **PRD** — Produz um Documento de Requisitos de Produto proporcional à complexidade.
-3. **Tech Spec** — Traduz o PRD em uma solução técnica implementável.
-4. **Decomposição** — Quebra a spec em tarefas pequenas, verificáveis e com execution prompts.
-5. **Implementação** — Executa uma tarefa por vez com skills da stack, guardrails e contexto mínimo.
-6. **QA** — Executa build real, testes com escopo restrito, lint gate e guardrail validators. PASS/FAIL por exit code. API runtime via `api-test` quando o diff tem backend; E2E de UI via Playwright quando tem frontend.
-7. **Review** — Avalia com score determinístico (0-100), classifica findings (P0/P1/P2), gera ações obrigatórias se reprovado.
-8. **Loop** — Itera até aceite (score ≥ 95, zero P0/P1). Depois captura aprendizados e arquiva.
+Para retomar depois de fechar a sessão ou dar `/clear`: o estado está na spec (checklist de tasks + log) e no git. A sessão nova mostra as specs ativas automaticamente; basta chamar o próximo comando.
 
-Cada fase produz artefatos em `.lla/sdd/current/` (isolados por task em `{task_id}/`, compartilhados em `shared/`) e contratos operacionais em [`.lla/manifests/`](./.lla/manifests/).
+## Comandos
 
-### Fast Path
-
-Nem toda mudança precisa do pipeline completo. Ravend prefere o **menor caminho seguro** — se já existe plano suficiente ou o escopo é trivial, pula direto para implementação. O fluxo SDD é o padrão, não uma camisa de força.
-
----
-
-## Exemplo de Fluxo Completo
-
-Demanda: *"Adicionar autenticação JWT com refresh token no módulo de usuários"* (full stack: Spring + Angular). Cada fase mostra o command, as skills carregadas e o artefato gerado.
-
-### 1. Intake
-
-```
-/sdd-start Adicionar autenticação JWT com refresh token no módulo de usuários
-```
-
-| O que acontece | Skills / ferramentas |
+| Comando | O que faz |
 |---|---|
-| Agente `intake` normaliza a demanda em brief estruturado | `sdd-intake` (+ `brainstorming` se a demanda estiver ambígua) |
-| **Artefato:** `.lla/sdd/current/shared/intake.md` | |
+| `/ravend:init` | Configura o projeto **nesta máquina**: perfil do gate, notas do projeto, MCPs locais. |
+| `/ravend:run <demanda>` | Pipeline completo interativo, parando só nos checkpoints humanos. |
+| `/ravend:spec <demanda \| PROJ-123 \| #45>` | Classifica o nível e escreve uma spec única com critérios Given/When/Then e tasks. |
+| `/ravend:build <slug> [--fix gate\|verify\|review]` | Implementa task a task: teste falhando → código → gate fast → commit. Também corrige falhas do gate e findings de review. |
+| `/ravend:verify <slug>` | Roda o gate full, monta a matriz critério→teste e escreve os testes de API/E2E que faltam. |
+| `/ravend:review <slug>` | Review por um agente com contexto limpo; findings P0/P1/P2 com `arquivo:linha` e cenário de falha. |
+| `/ravend:ship <slug>` | Confere gate verde + review aprovado, faz push e abre o PR com critérios, evidências e veredito. |
+| `/ravend:learn <lição>` | Guarda uma lição específica do projeto na knowledge local. |
 
-### 2. PRD e Tech Spec
+Skills carregadas automaticamente por contexto: `stack-spring`, `stack-quarkus`, `stack-angular`, `stack-react`, `api-tests` e `e2e-playwright`.
+
+## Como o pipeline decide o tamanho do processo
+
+| Nível | Quando | O que acontece |
+|---|---|---|
+| **trivial** | ≤2 arquivos, sem comportamento novo | Sem spec. Implementa direto com o gate. |
+| **small** | um módulo/camada, comportamento claro | Spec curta (problema, critérios, tasks). Segue sem pedir aprovação. |
+| **large** | vários módulos ou full stack, contrato de API/DB novo, migração, ambiguidade real | Spec completa com design. **Você aprova antes do build.** |
+| **bug** | defeito | Primeiro um teste que reproduz o bug; depois a correção. |
+
+Uma spec, não cinco documentos. Os critérios de aceite são escritos em Given/When/Then com o nível de teste que vai prová-los (`[unit]`, `[api]`, `[e2e]`, `[visual]`) e viram testes no build.
+
+Há só dois checkpoints humanos: **aprovar a spec** (só no nível large) e **aprovar o push/PR**. Entre eles, quem decide se algo está pronto é o gate.
+
+## Onde ficam os dados (local, por desenvolvedor)
+
+O Ravend é feito para ser usado por várias pessoas no mesmo repositório **sem sujar o repositório**. Perfil, notas, knowledge e specs são de cada desenvolvedor e ficam na máquina dele:
 
 ```
-/sdd-start (continua) ou /sdd-implement (fast path se o escopo já estiver claro)
+~/.ravend/                                  (ou $RAVEND_HOME)
+└── projects/
+    └── github.com-org-repo/                ← id derivado do remote origin (igual em todos os clones/worktrees)
+        ├── profile.json                    comandos do gate, formatters, app, paths protegidos
+        ├── project.md                      notas curtas de convenções do projeto (injetadas no início da sessão)
+        ├── knowledge/                      lições aprendidas: index.md + 1 arquivo por lição
+        ├── specs/<slug>/                   spec.md, verify.md, review-N.md, evidence/
+        ├── runs/                           logs do gate, da app e do modo headless
+        └── state/                          último gate, árvore verde, sessão armada
 ```
 
-| O que acontece | Skills / ferramentas |
+- **O que o time vê é o PR.** O `/ravend:ship` coloca no corpo do PR o resumo, os critérios de aceite com o teste que prova cada um, o resultado do gate e o veredito do review.
+- Repositórios sem remote usam o nome da pasta mais um hash do caminho.
+- Pode editar ou apagar qualquer arquivo dali à vontade. Apagar o diretório do projeto equivale a "desinstalar" o Ravend daquele repo.
+
+## Quality gate e hooks
+
+O gate é a peça central: **decisão por exit code, executada por script, nunca pelo julgamento do modelo.**
+
+- **`gate fast`** roda depois de cada task. Cobre só o que mudou: compilação/typecheck, testes relacionados aos arquivos alterados e lint dos arquivos alterados.
+- **`gate full`** é o que o CI rodaria para a branch: build, todos os testes, lint, integração e E2E. Opcionalmente também cobertura do diff e mutation testing.
+- A saída mostra só o trecho relevante da falha e o caminho do log completo, para manter o contexto do modelo enxuto.
+- Os comandos ficam no `profile.json` local; veja a referência com exemplos para Spring, Quarkus, Angular e React em [`skills/init/references/profile.md`](skills/init/references/profile.md).
+
+```bash
+python3 ~/.claude/plugins/.../ravend/scripts/ravend.py gate fast   # o caminho exato aparece no início da sessão
+python3 .../ravend.py gate full --dry-run                          # mostra os comandos resolvidos
+python3 .../ravend.py status                                       # specs ativas + último gate
+```
+
+Hooks do plugin (todos inertes em repositórios sem perfil local):
+
+| Hook | Comportamento |
 |---|---|
-| `spec-writer` produz PRD proporcional à complexidade e traduz em solução técnica | `sdd-prd`, `sdd-tech-spec` |
-| **Artefatos:** `shared/prd.md`, `shared/tech-spec.md` | |
+| `SessionStart` | Injeta id do projeto, notas, índice da knowledge e specs ativas. Exporta `RAVEND_ROOT`, `RAVEND_DATA` e `RAVEND_SESSION_ID`. |
+| `PreToolUse` (Edit/Write) | Bloqueia edição de `protected_paths` (`.env`, chaves, código gerado…). |
+| `PostToolUse` (Edit/Write) | Roda o formatter rápido configurado para o arquivo editado. Quem formata é a ferramenta, não o prompt. |
+| `Stop` | **Só enquanto um build está armado** (`/ravend:build` arma e `/ravend:ship` desarma): se a árvore mudou desde o último gate verde, roda o `gate fast` e impede o Claude de encerrar com o gate vermelho. Depois de 3 bloqueios seguidos, libera e pede intervenção humana. |
 
-### 3. Decomposição
+Válvulas de escape: `RAVEND_GATE=off` (desliga o hook de Stop), `RAVEND_FORMAT=off` (desliga o formatter) e `ravend.py disarm`.
 
-| O que acontece | Skills / ferramentas |
-|---|---|
-| `stack-routing` detecta full stack (spring + angular); `planner` seleciona as skills certas; `task-decomposer` quebra em tasks pequenas com execution prompts | `sdd-task-decomposition`, `stack-routing`, `writing-plans` |
-| **Artefatos:** `shared/tasks.md`, `manifests/task-scope.json` (com `inspect_first`, `interface_to_implement`, `edge_cases`, `tests_to_implement`) | |
+## Testes: unit, API e E2E
 
-### 4. Implementação (task por task)
-
-```
-/sdd-implement task_01
-```
-
-| O que acontece | Skills / ferramentas |
-|---|---|
-| `implementer` implementa uma task delimitada com skills da stack e guardrails; registra decisões | `sdd-implementation`, `spring-implementation`, guardrails (`minimal-change`, `class-size`, `code-formatting`, `unit-test-naming`), `test-driven-development`, `context7` (docs de libs se necessário) |
-| **Artefatos:** `{task_id}/decisions.md`, código no repo | |
-
-### 5. QA completo (backend + frontend)
-
-```
-/sdd-qa task_01
-```
-
-| O que acontece | Skills / ferramentas |
-|---|---|
-| **Backend:** build real (`mvn compile`), testes com escopo restrito (`mvn test`), lint gate (checkstyle), guardrail validators — PASS/FAIL por exit code | `sdd-qa-verification` |
-| **API runtime:** sobe o backend, detecta spec em `/v3/api-docs`, exercita `POST /auth/login` (sucesso + erro) e asserta status/contrato | `qa-api-testing` + MCP `api-test` |
-| **Frontend:** build (`npm run build`), testes, lint (ESLint) | `sdd-qa-verification` |
-| **E2E:** navega no fluxo de login, interage, asserta e salva screenshot como evidência | `qa-e2e-playwright` + MCP `playwright` |
-| **Artefatos:** `{task_id}/qa-report.md`, `{task_id}/api-*.json`, `{task_id}/e2e-*.png` | |
-
-Se o QA falhar com bug real: `systematic-debugging` para investigar a causa raiz antes de corrigir.
-
-### 6. Review com loop de convergência
-
-```
-/sdd-review task_01
-```
-
-| O que acontece | Skills / ferramentas |
-|---|---|
-| `reviewer` avalia com score determinístico 0-100, findings P0/P1/P2, cruza com anti-patterns do knowledge e gera ações obrigatórias se reprovado | `sdd-review-loop`, `spring-review`, `angular-review`, knowledge (`anti-patterns.md`), guardrails, `requesting-code-review` / `receiving-code-review` |
-| **Artefato:** `{task_id}/review_1.md` + output JSON | |
-
-Se **REJECTED** (score < 95 ou P0/P1), o loop roda até convergir:
-
-```
-/sdd-implement task_01   # corrige apenas P0/P1 listados
-/sdd-qa task_01
-/sdd-review task_01      # iteração 2 — score deve subir ≥ 5 (score delta rule)
-```
-
-Limites: max 3 iterações de review, max 2 retries de QA. Sem convergência → escalada para humano.
-
-### 7. Aceite
-
-```
-/sdd-accept
-```
-
-| O que acontece | Skills / ferramentas |
-|---|---|
-| Consolida aceite, gera `session.md` com métricas (score final, iterações, artefatos) e arquiva em `~/.ravend/archive/` | — |
-
-**Artefato final:** `~/.ravend/archive/{date}_{task_id}-{slug}/session.md`
-
----
-
-## Quick Start
-
-### 1. Abra este repositório no OpenCode
-
-Ravend roda como orquestrador residente dentro do [OpenCode](https://opencode.ai). Ao abrir este repo, o runtime carrega automaticamente:
-
-- Identidade e regras em [`AGENTS.md`](./AGENTS.md)
-- Configuração de agentes em [`opencode.json`](./opencode.json)
-- Contexto estável em [`.lla/context/`](./.lla/context/)
-- Templates em [`.lla/templates/`](./.lla/templates/)
-
-### 2. Inicie um fluxo de desenvolvimento
-
-```
-/sdd-start Adicionar autenticação de usuário com JWT
-```
-
-Ravend executa o intake, produz PRD e tech spec se necessário, decompõe em tarefas e conduz a implementação até QA e review.
-
-### 3. Comece a partir do Jira
-
-```
-/sdd-jira PROJ-1234
-```
-
-Puxa o item do Jira, normaliza via intake e segue o mesmo pipeline.
-
-### 4. Retome um fluxo interrompido
-
-```
-/sdd-resume
-```
-
-Lê o estado persistido em `.lla/sdd/current/` e continua de onde parou. Se houver múltiplas tasks ativas, lista e pede para escolher.
-
-### 5. Execute uma fase específica
-
-```
-/sdd-implement task_03
-/sdd-qa task_03
-/sdd-review task_03
-/sdd-accept
-```
-
-Cada command ataca uma fase específica. Use quando você já sabe o que precisa acontecer.
-
----
-
-## Commands
-
-| Command | Finalidade |
-|---|---|
-| `/sdd-start <demanda>` | Inicia um fluxo SDD completo a partir de uma demanda textual |
-| `/sdd-jira <chave>` | Inicia um fluxo SDD completo a partir de um item Jira |
-| `/sdd-resume` | Retoma o fluxo atual a partir do estado persistido |
-| `/sdd-implement <escopo>` | Executa implementação de uma tarefa ou escopo delimitado |
-| `/sdd-qa <escopo>` | Executa verificação de QA com build real, testes, lint e guardrails |
-| `/sdd-review <escopo>` | Revisa mudanças com score determinístico e findings P0/P1/P2 |
-| `/sdd-accept` | Consolida aceite quando QA e review estão satisfatórios |
-| `/ravend-whoami` | Explica quem é o Ravend, como está configurado e o que está ativo |
-| `/ravend-optimize` | Analisa o harness e sugere otimizações |
-| `/ravend-evolve <alvo>` | Propõe ou executa evolução incremental do harness |
-
-Definições completas em [`.opencode/commands/`](./.opencode/commands/).
-
----
+- **Unit e API:** os testes ficam versionados no repositório-alvo, no estilo do projeto. As skills de stack trazem padrões por camada: Spring (`@WebMvcTest`, `@SpringBootTest` + Testcontainers `@ServiceConnection`), Quarkus (`@QuarkusTest` + RestAssured + Dev Services, `@InjectMock`), Angular (TestBed + `HttpTestingController`, Vitest/Jest/Karma) e React (Vitest + Testing Library + MSW).
+- **E2E e visual:** o resultado é sempre um arquivo `@playwright/test` no repo, que roda no gate e no CI. O **MCP do Playwright** serve para *explorar* a UI e descobrir roles/labels; essa exploração acontece dentro do agente `verifier`, então os snapshots grandes do navegador não entram na sua sessão. Critérios visuais usam `toHaveScreenshot`.
+- **Ciclo de vida da app:** passos do gate com `needs_app` sobem a aplicação (`profile.app`), esperam o healthcheck e derrubam no final. O `webServer` do Playwright também funciona para o frontend.
 
 ## Agentes
 
-Ravend delega para agentes especializados, cada um com papel claro:
+Só três, e cada um existe por um motivo concreto:
 
-| Agente | Papel |
-|---|---|
-| [`orchestrator`](./.opencode/agents/orchestrator.md) | Agente primário. Escolhe o menor caminho seguro, persiste estado, coordena o pipeline e o loop de qualidade |
-| [`intake`](./.opencode/agents/intake.md) | Normaliza demandas brutas em briefs estruturados e acionáveis |
-| [`spec-writer`](./.opencode/agents/spec-writer.md) | Produz PRDs e refina especificações de produto |
-| [`planner`](./.opencode/agents/planner.md) | Identifica stack dominante, seleciona skills, evita planos inflados |
-| [`task-decomposer`](./.opencode/agents/task-decomposer.md) | Quebra specs em tarefas pequenas com execution prompts |
-| [`implementer`](./.opencode/agents/implementer.md) | Implementa uma tarefa delimitada com skills da stack; corrige P0/P1 do review |
-| [`qa`](./.opencode/agents/qa.md) | Executa build real, testes, lint gate, guardrail validators; valida API em runtime (backend) e E2E de UI (frontend) |
-| [`reviewer`](./.opencode/agents/reviewer.md) | Revisa com score determinístico, findings P0/P1/P2 e output JSON estruturado |
-| [`knowledge-curator`](./.opencode/agents/knowledge-curator.md) | Destila findings recorrentes em entradas compactas, indexadas e segmentadas por stack |
-
----
-
-## Skills
-
-Skills são carregadas sob demanda — nunca todas de uma vez. Elas fornecem procedimentos específicos por stack e por processo.
-
-### Skills de Processo (SDD)
-
-| Skill | Finalidade |
-|---|---|
-| `sdd-intake` | Normaliza demanda em intake estruturado |
-| `sdd-prd` | Produz ou refina um PRD |
-| `sdd-tech-spec` | Traduz PRD em tech spec implementável |
-| `sdd-task-decomposition` | Quebra spec em tarefas com critérios de aceite e execution prompts |
-| `sdd-implementation` | Guia a implementação de uma tarefa com execution prompt, guardrails e knowledge |
-| `sdd-qa-verification` | Executa build real, testes, lint gate e guardrail validators com output JSON |
-| `qa-e2e-playwright` | Valida fluxos de UI em navegador real via MCP Playwright (gate E2E opcional) |
-| `qa-api-testing` | Valida contratos de API em runtime via MCP `api-test` com assertions e import OpenAPI (gate backend opcional) |
-| `sdd-review-loop` | Revisa com score determinístico, findings P0/P1/P2, anti-pattern detection e output JSON |
-| `sdd-context-compaction` | Compacta estado de sessões longas em arquivos persistentes |
-| `sdd-knowledge-capture` | Converte findings recorrentes em conhecimento reutilizável com write-back segmentado |
-
-### Skills de Stack
-
-| Skill | Finalidade |
-|---|---|
-| `quarkus-implementation` | Padrões e checklist de implementação para Quarkus |
-| `quarkus-review` | Checklist de review para codebases Quarkus |
-| `spring-implementation` | Padrões e checklist de implementação para Spring |
-| `spring-review` | Checklist de review para codebases Spring |
-| `angular-implementation` | Padrões e checklist de implementação para Angular |
-| `angular-review` | Checklist de review para codebases Angular |
-| `stack-routing` | Identifica stack dominante e seleciona skills corretas |
-
-### Skills Meta
-
-| Skill | Finalidade |
-|---|---|
-| `ravend-harness-optimization` | Analisa e otimiza o próprio harness Ravend |
-| `ravend-self-evolution` | Guia a evolução incremental do sistema agentic Ravend |
-
-Definições completas em [`.opencode/skills/`](./.opencode/skills/).
-
-### Skills Externas (Superpowers)
-
-Skills genéricas de processo — brainstorming, writing-plans, test-driven-development, systematic-debugging, verification-before-completion e outras — são instaladas globalmente (não versionadas neste repo) via clone de [`obra/superpowers`](https://github.com/obra/superpowers) em `~/.config/opencode/superpowers/`, registradas no config global do OpenCode (`skills.paths`). Ficam disponíveis em qualquer projeto e são atualizadas com `git pull`.
-
----
-
-## Integrações (MCP)
-
-Servidores MCP configurados em `opencode.json`:
-
-| MCP | Status | Uso |
+| Agente | Modelo | Por quê |
 |---|---|---|
-| `filesystem` | enabled | Acesso a arquivos do workspace |
-| `playwright` | enabled | Navegador real para testes E2E de UI (QA) |
-| `api-test` | enabled | Testes de API REST em runtime com assertions e import OpenAPI (QA) |
-| `context7` | enabled | Documentação atualizada de bibliotecas via MCP |
-| `jira` | disabled | Requer credenciais e configuração manual para habilitar |
-| `github` | disabled | Requer credenciais e configuração manual para habilitar |
+| `reviewer` | opus | Review com **contexto limpo**, sem o viés de quem implementou. Só leitura; devolve JSON. |
+| `verifier` | sonnet | Escreve testes de E2E/API que faltam e isola a exploração do navegador. Não toca em código de produção. |
+| `implementer` | sonnet | Usado só para tasks `[P]` independentes em paralelo, cada uma no seu git worktree. |
 
-Context7 fica disponível para qualquer agente consultar docs de libs durante planejamento e implementação. Playwright é usado pela skill `qa-e2e-playwright` quando o diff contém frontend; `api-test` pela skill `qa-api-testing` quando o diff contém backend.
+A orquestração é feita pela própria sessão principal; não existe um "agente orquestrador". Intake, PRD, tech spec e decomposição viraram uma única skill, porque são a mesma linha de raciocínio, e quebrá-las em agentes só multiplicava handoffs e releitura de arquivos.
 
----
+## Modo headless / CI
 
-## Guardrails
+Para rodar sem supervisão (CI, máquina de build, background), use o runner. **O loop de controle é código**: o modelo é chamado em cada etapa via `claude -p` com JSON Schema, e o gate é re-executado pelo próprio runner, então nenhuma etapa consegue simplesmente declarar que está verde.
 
-Guardrails são regras de código carregadas condicionalmente por agente e stack. Eles protegem contra problemas recorrentes sem poluir o contexto global.
+```bash
+RUN="python3 ~/.claude/plugins/.../ravend/scripts/ravend_run.py"   # ou $RAVEND_ROOT/scripts/ravend_run.py
 
-| Guardrail | Severidade | applyTo | Regra |
-|---|---|---|---|
-| `minimal-change` | P0 | implementer | Não expandir escopo da task |
-| `class-size` | P1 | implementer, qa, reviewer | Max 150 linhas por classe (excl. package/import/blank) |
-| `code-formatting` | P1 | implementer, qa | Max 140 chars por linha |
-| `unit-test-naming` | P1 | implementer, qa | snake_case: `should_X_when_Y` |
-| `context-economy` | P1 | orchestrator | Não carregar >3 skills sem necessidade |
+$RUN "Adicionar filtro por categoria em /products"          # para após a spec se o nível for large
+$RUN --resume add-category-filter --until pr                  # continua depois que você aprovou a spec
+$RUN PROJ-123 --yes --until review --worktree --budget-usd 3   # sem checkpoint, em worktree separado
+```
 
-Definições completas em [`.lla/guardrails/`](./.lla/guardrails/). Thresholds canônicos em [`.lla/context/style-policy.md`](./.lla/context/style-policy.md).
-
-**Precedência:** se o projeto-alvo tem checkstyle.xml, prettier ou .editorconfig com thresholds diferentes, o do projeto-alvo prevalece.
-
----
-
-## Knowledge Base
-
-A knowledge base em [`.lla/knowledge/`](./.lla/knowledge/) armazena anti-patterns e lições recorrentes, organizados por papel e stack:
-
-| Segmento | Conteúdo |
+| Opção | Efeito |
 |---|---|
-| `shared/anti-patterns.md` | Índice mestre com AP-1 a AP-10 (Spring, Quarkus, Angular, Java genérico) |
-| `reviewer/anti-patterns-spring.md` | Field injection, findAll sem Pageable, N+1, catch genérico |
-| `reviewer/anti-patterns-quarkus.md` | @Singleton sem proxy, blocking no event loop, persist sem @Transactional |
-| `reviewer/anti-patterns-angular.md` | Subscribe sem cleanup, uso de any, DOM direto |
+| `--until spec\|build\|verify\|review\|pr` | Última etapa (padrão `review`; `pr` faz push e abre o PR). |
+| `--yes` | Pula a aprovação da spec large. |
+| `--max-fix-rounds N` | Rodadas de correção do gate e do review (padrão 2). Para antes se o mesmo P0/P1 reaparecer. |
+| `--budget-usd X` | Teto de gasto por chamada (`--max-budget-usd`). |
+| `--worktree` | Trabalha num worktree irmão na branch da feature. |
+| `--permission-mode` | Padrão `acceptEdits`. Ferramentas liberadas: git, o script do Ravend e os comandos do seu gate/app. Em sandbox/container, use `bypassPermissions`. |
 
-**Regra de frequência:** anti-patterns com freq ≥ 3 são hard constraints (equivalente a P0 na review). O reviewer os trata como bloqueantes.
+Códigos de saída: `0` concluído (ou pausado num checkpoint), `1` falha, `2` configuração faltando, `3` precisa de humano. Os logs de cada chamada ficam em `~/.ravend/projects/<id>/runs/headless-*`.
 
-**Write-back segmentado:** quando o reviewer detecta um padrão recorrente não catalogado, o knowledge-curator registra tanto no índice mestre quanto no segmento da stack.
+O runner precisa do perfil local. Numa máquina de CI, rode `/ravend:init` uma vez ou copie um `profile.json` para `$RAVEND_HOME/projects/<id>/`.
 
-Catálogo completo em [`knowledge-index.json`](./.lla/manifests/knowledge-index.json).
+## Integrações
 
----
+- **GitHub:** issues via `gh issue view`; PRs via `gh pr create`.
+- **Jira:** configure o MCP remoto oficial da Atlassian no Claude Code (escopo local ou de usuário) e use `/ravend:spec PROJ-123`. Sem o MCP, o Ravend pede que você cole o conteúdo da issue.
+- **Playwright MCP / Context7:** oferecidos pelo `/ravend:init` com versão fixa e escopo local (`@playwright/mcp@0.0.84`, `@upstash/context7-mcp@4.5.0`).
 
-## Estrutura do Repositório
+## Custo de contexto e desempenho
 
-```
-.
-├── AGENTS.md                    # Identidade e regras globais do Ravend
-├── opencode.json                # Configuração do OpenCode (agentes, MCPs: filesystem/playwright/context7, permissions)
-├── .opencode/
-│   ├── agents/                  # Definições de agentes
-│   ├── skills/                  # Definições de skills (SDD, por stack, meta)
-│   └── commands/                # Portas de entrada de commands CLI
-├── .lla/
-│   ├── context/                 # Contexto estável do projeto
-│   │   ├── project.md           # Missão do produto, domínio, restrições
-│   │   ├── architecture.md      # Estrutura do repo, módulos, fronteiras
-│   │   ├── conventions.md       # Padrões de código, nomenclatura, testes
-│   │   ├── stack.md             # Linguagens, frameworks, build, heurísticas
-│   │   ├── style-policy.md      # Fonte canônica de thresholds numéricos
-│   │   ├── ravend-identity.md   # Identidade operacional do Ravend
-│   │   └── ravend-optimization.md # Princípios de auto-otimização
-│ ├── sdd/
-│ │ └── current/ # Estado do fluxo SDD ativo
-│ │     ├── {task_id}/ # Artefatos por task (decisions, qa-report, review_N, progress, task-scope.json)
-│ │     └── shared/    # Artefatos compartilhados da demanda (intake, prd, tech-spec, tasks.md, acceptance.md)
-│   ├── manifests/               # Contratos JSON (schemas, handoffs, knowledge-index)
-│   │   └── schemas/             # Schemas de output (qa-output, review-output, task-scope, agent-handoff)
-│   ├── guardrails/              # Guardrails de código com applyTo e severidade
-│   ├── knowledge/               # Base de memória incremental e seletiva
-│   │   ├── reviewer/            # Anti-patterns segmentados por stack
-│   │   ├── implementer/         # Conhecimento específico do implementer
-│   │   └── shared/              # Índice mestre de anti-patterns
-│   └── templates/               # Templates de PRD, tech spec, task, review, session, knowledge
+- **~1,5k tokens fixos por sessão** (descrições de skills e agentes; os hooks não custam contexto). Cada skill só carrega o corpo quando é usada. Confira com `claude --plugin-dir . plugin details ravend`.
+- **O prompt cache é preservado.** O contexto injetado no início da sessão é estável; o estado mutável fica em arquivos lidos sob demanda.
+- **Subagentes só onde compensam:** review (independência), E2E (isolar snapshots ruidosos) e tasks paralelas. O resto acontece na sessão principal, que reaproveita o cache em vez de pagar a releitura de arquivos num contexto novo.
+- **Saída de ferramentas filtrada:** o gate devolve só os trechos de erro; os logs completos ficam em disco.
+- **Modelo por papel:** opus no review, sonnet na implementação e na verificação.
+
+## Desenvolvendo o plugin
+
+```bash
+claude --plugin-dir .                                   # usa o plugin a partir do checkout
+python3 -m unittest discover -s tests                   # testes do runtime (gate, hooks, identidade)
+claude plugin validate .                                # manifesto + marketplace (o aviso sobre CLAUDE.md é esperado)
+claude plugin validate skills && claude plugin validate agents
+claude plugin eval . --scaffold --trust-plugin --allow-tools Bash Write Edit Agent --runs 1 --ablation none
 ```
 
-Skills externas (Superpowers) vivem fora do repo, em `~/.config/opencode/superpowers/` — ver seção Skills Externas.
+Os evals em [`evals/`](evals/) montam um repositório fixture (Node, sem dependências) e medem o comportamento que importa:
+- uma mudança trivial não gera spec;
+- uma demanda grande gera spec large com critérios testáveis;
+- o build é test-first e roda o gate;
+- o review pega um bug de limite que a suíte verde não pega.
 
----
+Rode os evals a cada mudança de skill ou agente; sem `--ablation none`, eles também comparam com o Claude Code sem o plugin.
 
-## Princípios de Design
+Observação: no sandbox do `claude plugin eval` o filesystem do Bash é read-only (só Edit/Write escrevem). Por isso branch e commit não são avaliados ali; isso fica coberto pelos testes do runtime em `tests/`, onde um `claude` falso exercita o loop completo do runner headless.
 
-- **Menor caminho seguro.** SDD completo quando necessário; fast path quando suficiente.
-- **Minimalismo de contexto.** Carrega apenas o que a fase atual exige. Persiste o resto em arquivos.
-- **Consciente da stack, não acoplado.** Especialização entra via skills, não via lógica hardcoded.
-- **Resultados, não promessas.** QA executa build real. Review produz score determinístico. Loop converge ou escala.
-- **Defesa em camadas.** Guardrails, anti-patterns e style policy protegem sem poluir o contexto global.
-- **Auto-melhorável.** Ravend pode auditar, otimizar e evoluir seu próprio harness.
-- **Sem vendor lock-in.** Todos os artefatos são markdown e JSON. Versionáveis, diffáveis, editáveis.
-- **"Não alterar nada" é válido.** Quando a melhor decisão é nenhuma decisão, o Ravend diz isso.
+Estrutura:
+```
+.claude-plugin/   plugin.json, marketplace.json
+skills/           init, spec, build, verify, review, ship, run, learn, api-tests, e2e-playwright, stack-*
+agents/           reviewer, verifier, implementer
+hooks/hooks.json  SessionStart, PreToolUse, PostToolUse, Stop
+scripts/          ravend.py (runtime: identidade, gate, app, hooks) · ravend_run.py (headless)
+tests/            testes do runtime
+evals/            cenários de avaliação + fixture
+```
 
----
+## Vindo do Ravend para OpenCode
 
-## Stacks Suportadas
+A versão anterior (agentes e comandos do OpenCode em `.opencode/` e `.lla/`) continua no histórico git, na `main`. Mapeamento:
 
-| Stack | Implementação | Review | Anti-patterns |
-|---|---|---|---|
-| Quarkus | `quarkus-implementation` | `quarkus-review` | @Singleton, blocking, @Transactional |
-| Spring | `spring-implementation` | `spring-review` | Field injection, N+1, findAll, catch genérico |
-| Angular | `angular-implementation` | `angular-review` | Subscribe, any, DOM direto |
+| Antes | Agora |
+|---|---|
+| 9 agentes + orchestrator | Sessão principal + `reviewer`, `verifier` e `implementer` |
+| intake → PRD → tech spec → tasks (4 artefatos) | `/ravend:spec`: 1 arquivo, profundidade proporcional |
+| `/sdd-qa` com regras em prompt | `gate fast/full` em script + hook de Stop |
+| score 0–100 e regra de delta | gate binário + findings P0/P1 com evidência; no máximo 2 rodadas |
+| guardrails em markdown | formatters/linters do projeto via hooks e gate |
+| knowledge versionada com frequências seed | knowledge local por dev, capturada só de casos observados |
+| `.lla/sdd/current` + `~/.ravend/archive` | `~/.ravend/projects/<id>/specs` + git (o arquivo antigo não é tocado) |
 
-Stacks adicionais podem ser adicionadas criando novos diretórios de skill em [`.opencode/skills/`](./.opencode/skills/) e segmentos de knowledge em [`.lla/knowledge/reviewer/`](./.lla/knowledge/reviewer/).
+## Limitações conhecidas
 
----
-
-## Auto-Otimização
-
-Ravend tem consciência da própria arquitetura. Quando você pede para otimizar:
-
-- Audita agentes, skills, commands, manifests e arquivos de contexto
-- Identifica duplicação, inflação e complexidade desnecessária
-- Sugere remoções, consolidações e simplificações
-- Aponta trade-offs de economia de tokens e riscos de alucinação
-- Propõe evolução incremental com before/after claro
-
-Execute `/ravend-optimize` para análise, ou `/ravend-evolve` para execução. Veja os critérios de otimização em [`.lla/context/ravend-optimization.md`](./.lla/context/ravend-optimization.md).
-
----
+- O hook de Stop roda o `gate fast` de forma síncrona. Mantenha o fast realmente rápido (< 2 min) e deixe o pesado no `gate full`.
+- O paralelismo com `implementer` em worktrees é opt-in e conservador: só vale para tasks com arquivos disjuntos, e o merge é feito na sessão principal.
+- Baselines de screenshot do Playwright dependem do SO/navegador. Gere-as no mesmo ambiente do CI.
+- Windows nativo não foi testado (os scripts usam process groups POSIX); use WSL.
 
 ## Licença
 
-Este projeto é fornecido como-is para uso com OpenCode. Veja arquivos individuais para termos aplicáveis.
+[MIT](LICENSE)

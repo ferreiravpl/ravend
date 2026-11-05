@@ -1,0 +1,42 @@
+schema_version: "1.0"
+name: spec-tier-large
+description: A cross-cutting feature in headless mode must produce a large-tier spec with testable Given/When/Then criteria and structured output.
+tags: [spec, tiering, headless]
+context:
+  scaffold_script: scaffold.sh
+execution:
+  prompt: >-
+    /ravend:spec --headless Customers must be able to save carts across sessions: persist the cart per customer,
+    expose GET/PUT /carts/{customerId} with validation, show a "Saved cart" badge in the checkout page,
+    and migrate existing anonymous carts on login.
+  max_turns: 30
+  timeout_seconds: 600
+  allowed_tools: [Read, Glob, Grep, Skill, Bash, Write, Edit]
+  env:
+    EVAL_RAVEND_HOME: .ravend-home
+runs: 1
+graders:
+  - type: regex
+    name: headless-json-large
+    pattern: '"tier"\s*:\s*"large"'
+  - type: tool_used
+    name: no-questions-in-headless
+    tool: AskUserQuestion
+    min: 0
+    max: 0
+    arm: both
+  - type: file_exists
+    name: spec-written-locally
+    path: .ravend-home/projects/example.com-acme-shop/specs/*/spec.md
+  - type: file_exists
+    name: nothing-written-in-repo-docs
+    path: docs
+    exists: false
+  - type: llm
+    name: spec-quality
+    focus: trace
+    criteria: >-
+      The spec.md the agent wrote (Write tool call under .ravend-home/projects/*/specs/) has acceptance criteria in Given/When/Then form tagged with
+      test levels ([unit]/[api]/[e2e]), a Design section with the API/persistence contract, and small tasks
+      listing files and the ACs they prove. Real ambiguities (e.g. migration rules, auth) are listed as
+      assumptions or open questions instead of invented business rules.

@@ -1,0 +1,24 @@
+{
+  "name": "ravend",
+  "version": "0.1.0",
+  "description": "Spec-driven delivery pipeline for Claude Code: adaptive spec, test-first build, enforced quality gates, independent review and PR — from idea to tested code.",
+  "author": {
+    "name": "Lucas Ferreira",
+    "url": "https://github.com/ferreiravpl"
+  },
+  "homepage": "https://github.com/ferreiravpl/ravend",
+  "repository": "https://github.com/ferreiravpl/ravend",
+  "keywords": [
+    "sdd",
+    "spec-driven",
+    "tdd",
+    "quality-gates",
+    "playwright",
+    "spring",
+    "quarkus",
+    "angular",
+    "react"
+  ],
+  "icon": "imgs/ravend-logo.png",
+  "license": "MIT"
+}

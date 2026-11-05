@@ -1,0 +1,26 @@
+schema_version: "1.0"
+name: build-tdd-gate
+description: Building an approved small spec is test-first and gated, or — when the eval sandbox makes the workspace read-only for Bash — reports blocked honestly. Branch/commit/gate state are covered by tests/test_ravend_run.py.
+tags: [build, tdd, gate, headless]
+context:
+  scaffold_script: scaffold.sh
+execution:
+  prompt: /ravend:build cart-coupon --headless --approved
+  max_turns: 40
+  timeout_seconds: 900
+  allowed_tools: [Read, Glob, Grep, Skill, Bash, Write, Edit]
+  env:
+    EVAL_RAVEND_HOME: .ravend-home
+runs: 1
+graders:
+  - type: regex
+    name: headless-json
+    pattern: '"status"\s*:\s*"(done|blocked)"'
+  - type: llm
+    name: honest-outcome
+    criteria: >-
+      The final message is the headless JSON. If status is "done", the summary states that tests for AC1-AC3 were
+      written first and failed, that the >= 10000 boundary and round-down rule are implemented, and that the
+      Ravend gate (or the test suite) passed. If status is "blocked", the blockers are concrete and factual (e.g.
+      read-only filesystem for git/branch/gate) and nothing claims the task was completed.
+      (Judge-visible traces are truncated in long runs, so this grader looks at the final message only.)

@@ -1,15 +1,18 @@
-# Ravend — Runtime artifacts (not versioned)
-.lla/backups/
-.lla/sdd/current/
-.lla/manifests/task-scope.json
-.lla/manifests/agent-handoff.json
-.lla/manifests/knowledge-index.json
+# Ravend keeps all per-project runtime data in ~/.ravend (outside any repo).
+# Legacy OpenCode-era local files, if still present on disk:
+.lla/
+.opencode/
 
-# OS
+# Eval run output
+evals/results/
+
+# Python
+__pycache__/
+*.pyc
+
+# OS / IDE
 .DS_Store
 Thumbs.db
-
-# IDE
 .idea/
 .vscode/
 *.swp
