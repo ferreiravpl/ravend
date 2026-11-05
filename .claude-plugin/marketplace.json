@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "ravend",
+  "description": "Ravend — spec-driven delivery pipeline for Claude Code.",
+  "owner": {
+    "name": "Lucas Ferreira",
+    "url": "https://github.com/ferreiravpl"
+  },
+  "plugins": [
+    {
+      "name": "ravend",
+      "description": "Spec-driven delivery pipeline: adaptive spec, test-first build, enforced quality gates, independent review and PR.",
+      "category": "development",
+      "source": "./"
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+schema_version: "1.0"
+name: review-catches-boundary-bug
+description: The independent review must catch an AC boundary bug that the (green) test suite misses.
+tags: [review, headless]
+context:
+  scaffold_script: scaffold.sh
+execution:
+  prompt: /ravend:review cart-coupon --headless
+  max_turns: 30
+  timeout_seconds: 600
+  allowed_tools: [Read, Glob, Grep, Skill, Bash, Write, Agent]
+  env:
+    EVAL_RAVEND_HOME: .ravend-home
+runs: 1
+graders:
+  - type: tool_used
+    name: dispatched-reviewer-agent
+    tool: Agent
+    input_match: "reviewer"
+    min: 1
+  - type: regex
+    name: changes-requested
+    pattern: '"verdict"\s*:\s*"CHANGES_REQUESTED"'
+  - type: file_exists
+    name: review-file-written
+    path: .ravend-home/projects/example.com-acme-shop/specs/cart-coupon/review-1.md
+  - type: llm
+    name: finds-boundary
+    focus:
+      source: file
+      path: .ravend-home/projects/example.com-acme-shop/specs/cart-coupon/review-1.md
+    criteria: >-
+      The review contains findings that include a P0 or P1 pointing at src/cart.js (the `gross > 10000` comparison) explaining that a
+      cart of exactly 10000 cents gets no discount, violating AC1 ("10000 cents or more"), and/or that the tests
+      do not cover the 10000 boundary. Findings are not padded with style nits.

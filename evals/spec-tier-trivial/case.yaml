@@ -1,0 +1,28 @@
+schema_version: "1.0"
+name: spec-tier-trivial
+description: A one-line label change must be classified trivial — no spec file, no PRD ceremony.
+tags: [spec, tiering]
+context:
+  scaffold_script: scaffold.sh
+execution:
+  prompt: '/ravend:spec Change the cart label text from "Total:" to "Subtotal:" in src/cart.js'
+  max_turns: 15
+  timeout_seconds: 300
+  allowed_tools: [Read, Glob, Grep, Skill, Bash]
+  env:
+    EVAL_RAVEND_HOME: .ravend-home
+runs: 1
+graders:
+  - type: regex
+    name: says-trivial
+    pattern: "trivial"
+    flags: "i"
+  - type: file_exists
+    name: no-spec-written
+    path: .ravend-home/projects/example.com-acme-shop/specs/*/spec.md
+    exists: false
+  - type: llm
+    name: proportional
+    criteria: >-
+      The response classifies the change as trivial, does not produce a PRD/tech spec/acceptance-criteria document,
+      and points to implementing it directly (e.g. /ravend:build) instead of starting a multi-step process.
