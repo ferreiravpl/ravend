@@ -1,10 +1,10 @@
 ---
-name: learn
-description: Save a reusable, project-specific lesson (from a review finding, a correction by the developer, or a recurring gate failure) into the developer's local Ravend knowledge for this project. Use when a mistake should not happen again in this codebase.
-argument-hint: <lesson or finding to capture>
+name: remember
+description: "Guarda uma lição específica deste projeto (de um finding de review, de uma correção sua ou de uma falha repetida do gate) para o Ravend não repetir o erro. A lição fica só na sua máquina e aparece no início de cada sessão."
+argument-hint: "<lição ou finding a guardar>"
 ---
 
-# Ravend · learn
+# Ravend · remember
 
 Knowledge is per developer and per project, stored at `<data_dir>/knowledge/` (`data_dir` from `python3 "$RAVEND_ROOT/scripts/ravend.py" project`). It is never committed. Its index is injected at session start, so it must stay short.
 

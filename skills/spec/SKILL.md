@@ -1,7 +1,7 @@
 ---
 name: spec
-description: Turn a demand (free text, Jira key like PROJ-123, GitHub issue #45/URL) into a right-sized spec with testable acceptance criteria and a task checklist. Use when starting a feature or bug that is not trivial, or when the user asks to plan/specify work before coding.
-argument-hint: <demand | PROJ-123 | #45> [--headless] [--approved]
+description: "Transforma uma demanda (texto, PROJ-123, #45 ou URL) numa spec do tamanho certo, com critérios de aceite testáveis e tasks, sem implementar nada. Use para planejar antes de codar; o /ravend:start já começa por aqui."
+argument-hint: "<demanda | PROJ-123 | #45> [--tier trivial|small|large|bug]"
 ---
 
 # Ravend · spec
@@ -43,10 +43,10 @@ Use [references/spec-template.md](references/spec-template.md). Rules:
 - If an existing project lesson in `<data_dir>/knowledge/` applies, reference it in the task.
 
 ## 5. Approval
-- `large`: interactive → present a 5-line summary + path and ask for approval; on approval set `status: approved`. Headless without `--approved` → leave `status: draft`.
+- Write the spec with `status: draft` for `large`; interactive → present a 5-line summary + path and ask for approval; on approval run `$RV spec approve <slug>` (do not edit the status by hand). Headless without `--approved` → leave it draft.
 - `small`/`bug`: set `status: approved` unless there are blocking questions.
 - With `--approved`: set `status: approved`.
 
 ## Output
-Interactive: summary (tier, #ACs, #tasks, path) and the next command (`/ravend:build <slug>`).
+Interactive: summary (tier, #ACs, #tasks, path) and the next command (`/ravend:continue`).
 `--headless`: never ask questions; end with exactly one JSON object: `{"slug": "...", "tier": "...", "spec_path": "...", "blocking_questions": [...]}`.

@@ -1,6 +1,6 @@
 # profile.json reference
 
-Location: `<data_dir>/profile.json` (local to the developer, never committed). Read by `scripts/ravend.py` (gate, hooks, app) and `scripts/ravend_run.py` (headless).
+Location: `<data_dir>/profile.json` (local to the developer, never committed). Read by `scripts/ravend.py` (gate, hooks, app) and `scripts/ravend_auto.py` (`ravend auto`).
 
 ```jsonc
 {
@@ -32,7 +32,8 @@ Location: `<data_dir>/profile.json` (local to the developer, never committed). R
     "context": ["serena"],
     "browser": ["playwright"]
   },
-  "headless": {"allowed_tools": ["Bash(docker compose *)"]}
+  "flow": {"max_fix_rounds": 2},                    // fix rounds (verify and review, each) before `next` hands over to a human
+  "headless": {"allowed_tools": ["Bash(docker compose *)"]}   // extra Bash patterns `ravend auto` may use
 }
 ```
 

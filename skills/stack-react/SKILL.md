@@ -1,6 +1,6 @@
 ---
 name: stack-react
-description: React (Vite/Next) specifics for implementing and testing changes — Vitest/Jest with Testing Library, MSW for network, related-test commands, styling tokens and hook pitfalls. Use when a task touches a React app.
+description: "Particularidades de React (Vite/Next) para implementar e testar — Vitest/Jest com Testing Library, MSW para rede, testes relacionados, tokens de estilo e armadilhas de hooks. Carregada automaticamente quando a task mexe num app React."
 ---
 
 # React

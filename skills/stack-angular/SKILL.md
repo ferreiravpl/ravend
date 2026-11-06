@@ -1,6 +1,6 @@
 ---
 name: stack-angular
-description: Angular specifics for implementing and testing changes — standalone components, signals, new control flow, TestBed with HttpTestingController, Vitest/Jest/Karma runners and reactive pitfalls. Use when a task touches an Angular app or library.
+description: "Particularidades de Angular para implementar e testar — standalone components, signals, novo control flow, TestBed com HttpTestingController, Vitest/Jest/Karma e armadilhas reativas. Carregada automaticamente quando a task mexe num app Angular."
 ---
 
 # Angular

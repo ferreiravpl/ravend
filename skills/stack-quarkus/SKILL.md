@@ -1,6 +1,6 @@
 ---
 name: stack-quarkus
-description: Quarkus specifics for implementing and testing changes — @QuarkusTest with RestAssured, Dev Services, @InjectMock, Panache/transactions, Quarkus REST threading model and commands. Use when a task touches a Quarkus module.
+description: "Particularidades de Quarkus para implementar e testar — @QuarkusTest com RestAssured, Dev Services, @InjectMock, Panache/transações, modelo de threads e comandos. Carregada automaticamente quando a task mexe num módulo Quarkus."
 ---
 
 # Quarkus

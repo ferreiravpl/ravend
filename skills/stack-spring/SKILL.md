@@ -1,6 +1,6 @@
 ---
 name: stack-spring
-description: Spring Boot specifics for implementing and testing changes — test slices, Testcontainers, Surefire/Gradle commands and version pitfalls (Boot 3/4, jakarta, transactions, JPA). Use when a task touches a Spring Boot module.
+description: "Particularidades de Spring Boot para implementar e testar — test slices, Testcontainers, comandos Surefire/Gradle e armadilhas de versão (Boot 3/4, jakarta, transações, JPA). Carregada automaticamente quando a task mexe num módulo Spring Boot."
 ---
 
 # Spring Boot

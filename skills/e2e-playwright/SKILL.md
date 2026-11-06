@@ -1,6 +1,6 @@
 ---
 name: e2e-playwright
-description: Write durable end-to-end and visual tests with @playwright/test for acceptance criteria tagged [e2e] or [visual] — setup, exploring the UI with the Playwright MCP, resilient locators, web-first assertions, screenshots and traces. Use when a UI behavior or visual change must be proven.
+description: "Como escrever testes E2E e visuais duráveis com @playwright/test para critérios [e2e] ou [visual] — setup, exploração da tela por um MCP de navegador, locators resilientes, asserções web-first, screenshots e traces. Carregada automaticamente quando um comportamento de UI precisa ser provado."
 ---
 
 # E2E with Playwright

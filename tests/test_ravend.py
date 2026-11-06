@@ -227,10 +227,136 @@ class TerminalCommand(RepoCase):
         env = {"CLAUDE_CONFIG_DIR": str(cfg)}
         res = subprocess.run([str(bindir / "ravend"), "status"], cwd=self.repo, capture_output=True, text=True,
                              env={**os.environ, **env})
-        self.assertIn("profile yes", res.stdout)
-        res = subprocess.run([str(bindir / "ravend"), "run", "--help"], cwd=self.repo, capture_output=True, text=True,
+        self.assertIn("perfil sim", res.stdout)
+        res = subprocess.run([str(bindir / "ravend"), "auto", "--help"], cwd=self.repo, capture_output=True, text=True,
                              env={**os.environ, **env})
-        self.assertIn("usage: ravend run", res.stdout)
+        self.assertIn("usage: ravend auto", res.stdout)
+
+
+SPEC = """---
+slug: s
+title: Coupon
+tier: {tier}
+status: {status}
+branch: feat/s
+---
+# Coupon
+
+## Tasks
+- [ ] T1: first — files: src/sum.js — proves: AC1 — deps: none
+- [ ] T2: second — files: src/sum.js — proves: AC1 — deps: T1
+
+## Log
+"""
+
+
+class Flow(RepoCase):
+    def write_spec(self, tier="small", status="approved"):
+        path = ravend.spec_file(self.data, "s")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(SPEC.format(tier=tier, status=status))
+        return path
+
+    def nxt(self):
+        return ravend.next_action(self.repo, "s")
+
+    def test_no_spec_points_to_start_and_one_spec_is_picked_automatically(self):
+        self.assertEqual(ravend.next_action(self.repo)["action"], "start")
+        self.write_spec()
+        self.assertEqual(ravend.next_action(self.repo)["slug"], "s")
+
+    def test_large_draft_waits_for_approval_and_blocking_questions_win(self):
+        path = self.write_spec(tier="large", status="draft")
+        self.assertEqual(self.nxt()["action"], "approve")
+        path.write_text(path.read_text() + "\n## Open questions\n- BLOCKING: which currency?\n")
+        info = self.nxt()
+        self.assertEqual((info["action"], info["questions"]), ("answer", ["BLOCKING: which currency?"]))
+        self.assertEqual(self.run_cli("spec", "approve", "s").returncode, 0)
+        self.assertEqual(self.nxt()["action"], "build")
+
+    def test_full_cycle_build_verify_fix_review_ship(self):
+        self.write_spec()
+        self.assertEqual((self.nxt()["action"], self.nxt()["task"]), ("build", "T1"))
+        self.assertEqual(self.run_cli("task", "done", "s", "t1").returncode, 0)
+        self.assertEqual(self.nxt()["task"], "T2")
+        self.assertEqual(self.run_cli("task", "done", "s", "T9").returncode, 2)  # unknown task
+        self.run_cli("task", "done", "s", "T2")
+        self.assertIn("in-progress", ravend.spec_file(self.data, "s").read_text())
+        self.assertEqual(self.nxt()["action"], "verify")
+        # recording without a gate on this exact code is refused
+        self.assertEqual(self.run_cli("verify", "record", "s").returncode, 2)
+        self.run_cli("gate", "full")
+        self.assertEqual(self.run_cli("verify", "record", "s", "--uncovered", "AC1: no test").returncode, 0)
+        info = self.nxt()
+        self.assertEqual((info["action"], info["fix"]), ("fix", "verify"))
+        (self.repo / "test" / "more.test.js").write_text("import { test } from 'node:test'; test('x', () => {});\n")
+        self.assertEqual(self.nxt()["action"], "verify")  # code changed after the record
+        self.run_cli("gate", "full")
+        self.run_cli("verify", "record", "s")
+        self.assertEqual(self.nxt()["action"], "review")
+        review = {"verdict": "APPROVED", "findings": [{"severity": "P1", "file": "src/sum.js", "line": 1,
+                                                       "title": "overflow", "scenario": "big numbers"}]}
+        res = self.run_cli("review", "record", "s", stdin=json.dumps(review))
+        self.assertIn("CHANGES_REQUESTED", res.stdout)  # a P1 can never be APPROVED
+        self.assertIn("overflow", (self.data / "specs" / "s" / "review-1.md").read_text())
+        self.assertEqual((self.nxt()["action"], self.nxt()["fix"]), ("fix", "review"))
+        (self.repo / "src" / "sum.js").write_text("export const sum = (a, b) => a + b; // fixed\n")
+        self.run_cli("gate", "full")
+        self.run_cli("verify", "record", "s")
+        self.run_cli("review", "record", "s", stdin='{"verdict": "APPROVED", "findings": []}')
+        self.assertEqual(self.nxt()["action"], "ship")
+        self.run_cli("spec", "done", "s", "--pr", "https://example.com/pr/9")
+        info = self.nxt()
+        self.assertEqual(info["action"], "done")
+        self.assertIn("pr/9", info["message"])
+
+    def test_review_file_inside_the_repo_is_refused(self):
+        self.write_spec()
+        (self.repo / "review.json").write_text('{"findings": []}')
+        res = self.run_cli("review", "record", "s", "--file", str(self.repo / "review.json"))
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("entrada padrão", res.stderr)
+        outside = Path(self.tmp.name) / "review.json"
+        outside.write_text('{"findings": []}')
+        self.assertEqual(self.run_cli("review", "record", "s", "--file", str(outside)).returncode, 0)
+        self.assertEqual(ravend.spec_state(self.data, "s")["reviews"][0]["raw"], {"findings": []})
+
+    def test_repeated_review_findings_escalate_to_human(self):
+        self.write_spec()
+        for t in ("T1", "T2"):
+            self.run_cli("task", "done", "s", t)
+        bad = json.dumps({"findings": [{"severity": "P0", "file": "a.js", "title": "same bug"}]})
+        for i in range(2):
+            (self.repo / "src" / "sum.js").write_text(f"export const sum = (a, b) => a + b; // try {i}\n")
+            self.run_cli("gate", "full")
+            self.run_cli("verify", "record", "s")
+            self.run_cli("review", "record", "s", stdin=bad)
+        info = self.nxt()
+        self.assertEqual(info["action"], "human")
+        self.assertEqual(info["blocking"], ["a.js — same bug"])
+
+    def test_two_active_specs_need_a_choice_unless_the_branch_tells(self):
+        self.write_spec()
+        other = ravend.spec_file(self.data, "other")
+        other.parent.mkdir(parents=True)
+        other.write_text(SPEC.format(tier="small", status="approved").replace("feat/s", "feat/other"))
+        self.assertEqual(ravend.next_action(self.repo)["action"], "choose")
+        sh("git switch -q -c feat/other", self.repo)
+        self.assertEqual(ravend.next_action(self.repo)["slug"], "other")
+
+
+class Doctor(RepoCase):
+    def test_doctor_reports_missing_gate_command_and_profile(self):
+        res = self.run_cli("doctor", "--no-probe")
+        self.assertIn("perfil", res.stdout)
+        profile = json.loads((self.data / "profile.json").read_text())
+        profile["gate"]["full"] = [{"name": "build", "run": "./mvnw -q verify"}]
+        ravend.save_json(self.data / "profile.json", profile)
+        res = self.run_cli("doctor", "--no-probe")
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("`./mvnw` não encontrado", res.stdout)
+        (self.data / "profile.json").unlink()
+        self.assertIn("rode /ravend:init", self.run_cli("doctor", "--no-probe").stdout)
 
 
 if __name__ == "__main__":

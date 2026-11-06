@@ -1,6 +1,6 @@
 {
   "name": "ravend",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Spec-driven delivery pipeline for Claude Code: adaptive spec, test-first build, enforced quality gates, independent review and PR — from idea to tested code.",
   "author": {
     "name": "Lucas Ferreira",
