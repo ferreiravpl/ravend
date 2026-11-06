@@ -30,7 +30,7 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import ravend  # noqa: E402
+import ravend_lib as ravend  # noqa: E402
 
 SPEC_SCHEMA = {
     "type": "object",
@@ -62,7 +62,19 @@ REVIEW_SCHEMA = {
     },
     "required": ["verdict", "findings"],
 }
-SHIP_SCHEMA = {"type": "object", "properties": {"pr_url": {"type": "string"}}, "required": ["pr_url"]}
+SHIP_SCHEMA = {"type": "object", "properties": {"pr_url": {"type": "string"}, "blocked": {"type": "string"}},
+               "required": ["pr_url"]}
+
+
+def command_patterns(cmd: str) -> list[str]:
+    """Bash permissions for one gate/app command: the command itself, and the same command with extra
+    arguments (narrowest test runs). Text from the first placeholder on becomes the wildcard, so
+    `npx eslint {files}` allows `npx eslint …`, never every `npx`."""
+    cmd = " ".join(cmd.split())
+    fixed = cmd.split("{", 1)[0].strip()
+    if not fixed:
+        return []
+    return [f"Bash({fixed} *)"] if "{" in cmd else [f"Bash({fixed})", f"Bash({fixed} *)"]
 
 
 class Runner:
@@ -106,10 +118,7 @@ class Runner:
             tools.append("mcp__playwright")  # the server /ravend:init suggests when no browser MCP was chosen
         commands = [s.get("run", "") for mode in ("fast", "full") for s in (self.profile.get("gate") or {}).get(mode, [])]
         commands += [a.get("start", "") for a in ravend._apps(self.profile)]
-        for cmd in commands:
-            first = cmd.strip().split(" ")[0] if cmd.strip() else ""
-            if first and not first.startswith("{"):
-                tools.append(f"Bash({first} *)")
+        tools += [pattern for cmd in commands for pattern in command_patterns(cmd)]
         tools += (self.profile.get("headless") or {}).get("allowed_tools", [])
         if role_stage == "ship":
             tools.append("Bash(gh *)")
@@ -260,14 +269,14 @@ class Runner:
                 entry = ravend.record_verify(self.cwd, slug, out.get("uncovered_criteria") or [])
                 self.say(f"verify: gate {entry['gate']}, {len(entry['uncovered'])} critério(s) sem teste")
             elif action == "review":
-                stage_start = datetime.now().isoformat(timespec="seconds")
+                before = ravend.spec_state(self.data, slug)["reviews"]
                 out = self.claude("review", f"/ravend:review {slug}{flags}", REVIEW_SCHEMA)
                 st = ravend.spec_state(self.data, slug)
                 last = st["reviews"][-1] if st["reviews"] else None
                 if not last or last.get("fingerprint") != ravend.tree_fingerprint(self.cwd):
                     # the skill could not record it on this code: record it here, keeping the reviewer's full
                     # findings when the skill managed to store them during this stage
-                    fresh = last and last.get("raw") and last.get("at", "") >= stage_start
+                    fresh = last and last.get("raw") and (len(st["reviews"]) > len(before) or last != (before or [None])[-1])
                     ravend.record_review(self.cwd, slug, last["raw"] if fresh else out)
                 last = ravend.spec_state(self.data, slug)["reviews"][-1]
                 self.say(f"review {last['n']}: {last['verdict']} · {len(last['blocking'])} P0/P1")
@@ -278,6 +287,8 @@ class Runner:
                     self.summary()
                     return 0
                 out = self.claude("ship", f"/ravend:ship {slug}{flags} --yes", SHIP_SCHEMA)
+                if not out.get("pr_url"):
+                    return self.fail(f"o ship não abriu o PR: {out.get('blocked') or 'sem motivo informado'}", 3)
                 self.say(f"PR: {out['pr_url']}")
                 if ravend.next_action(self.cwd, slug)["action"] != "done":
                     ravend.set_spec_status(self.data, slug, "done", f"PR {out['pr_url']}")

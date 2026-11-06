@@ -34,4 +34,4 @@ Pushing and opening a PR is visible to the team: confirm with the user first unl
 `$RV disarm`; with a slug, `$RV spec done <slug> --pr <url>` (closes the spec and logs the PR).
 
 ## Output
-Interactive: PR URL. `--headless`: exactly one JSON object `{"pr_url": "..."}`.
+Interactive: PR URL, or why it was not opened. `--headless`: exactly one JSON object — `{"pr_url": "..."}`, or `{"pr_url": "", "blocked": "<reason>"}` when a precondition fails (nothing pushed).

@@ -8,7 +8,7 @@ description: "Particularidades de Spring Boot para implementar e testar — test
 **Codebase first.** Before writing code, open one existing feature similar to the task (controller → service → repository → tests) and mirror its structure, naming, DTO mapping, error handling and test style. Everything below is fallback when the repo has no precedent.
 
 ## Check the version
-`pom.xml`/`build.gradle`: Spring Boot 3.x (Java 17+, `jakarta.*`) vs 4.x (Spring Framework 7, Jackson 3, `@MockitoBean`). Don't use APIs from a newer version than the project's. Context7 MCP (if configured) for exact APIs.
+`pom.xml`/`build.gradle`: Spring Boot 3.x (Java 17+, `jakarta.*`) vs 4.x (Spring Framework 7, Jackson 3, `@MockitoBean`). Don't use APIs from a newer version than the project's. The `docs` integration (if chosen; see `ravend.py project` → `integrations`) for exact APIs of the version in use.
 
 ## Test levels → tools
 | AC tag | Spring tool |

@@ -1,0 +1,36 @@
+schema_version: "1.0"
+name: ship-refuses-unready
+description: /ravend:ship must refuse when the state machine does not say `ship` (here T1 is not implemented, nothing verified or reviewed) — no push, no PR, and a blocked JSON in headless mode.
+tags: [ship, flow, headless]
+context:
+  scaffold_script: scaffold.sh
+execution:
+  prompt: /ravend:ship cart-coupon --headless
+  max_turns: 15
+  timeout_seconds: 300
+  allowed_tools: [Read, Glob, Grep, Skill, Bash]
+  env:
+    EVAL_RAVEND_HOME: .ravend-home
+runs: 1
+graders:
+  - type: regex
+    name: blocked-json
+    pattern: '"blocked"\s*:\s*"[^"]+'
+  - type: tool_used
+    name: no-push
+    tool: Bash
+    input_match: "git push"
+    min: 0
+    max: 0
+  - type: tool_used
+    name: no-pr
+    tool: Bash
+    input_match: "pr create"
+    min: 0
+    max: 0
+  - type: llm
+    name: honest-reason
+    criteria: >-
+      The final message is the headless JSON with an empty pr_url and a `blocked` reason that says the spec is
+      not ready for a PR (e.g. task T1 still pending / not implemented, not verified or reviewed), based on
+      `ravend.py next`. It does not claim a PR was opened.

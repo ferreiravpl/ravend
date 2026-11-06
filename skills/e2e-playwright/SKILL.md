@@ -5,7 +5,7 @@ description: "Como escrever testes E2E e visuais duráveis com @playwright/test 
 
 # E2E with Playwright
 
-The deliverable is a **test file in the repo** that runs in the gate and in CI — not a one-off browser session. The Playwright MCP is for *exploring* the UI to discover structure and selectors; the result must be a `*.spec.ts`.
+The deliverable is a **test file in the repo** that runs in the gate and in CI — not a one-off browser session. The `browser` integration (the developer's browser MCP; Playwright MCP by default) is for *exploring* the UI to discover structure and selectors; the result must be a `*.spec.ts`.
 
 ## 1. Setup (only if missing — ask before adding dependencies)
 - Existing `playwright.config.*` → follow it (testDir, baseURL, projects).
@@ -21,7 +21,7 @@ The deliverable is a **test file in the repo** that runs in the gate and in CI �
   `webServer` starts the frontend itself. If the backend must be up, the gate step uses `needs_app` (profile `app`).
 - Register the gate step in the local profile if absent: `{"name": "e2e", "cwd": "<web>", "run": "npx playwright test"}` in `gate.full`.
 
-## 2. Explore (Playwright MCP, when configured)
+## 2. Explore (browser MCP, when available)
 Navigate to the page, take accessibility snapshots, perform the flow once. Note roles, accessible names, labels and URLs. Keep exploration short; snapshots are large.
 
 ## 3. Write the test
