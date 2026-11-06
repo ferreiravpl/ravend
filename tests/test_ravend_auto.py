@@ -13,9 +13,9 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-import ravend  # noqa: E402
+import ravend_lib as ravend  # noqa: E402
 
-RUNNER = Path(ravend.__file__).with_name("ravend_auto.py")
+RUNNER = Path(__file__).resolve().parent.parent / "scripts" / "ravend_auto.py"
 
 FAKE_CLAUDE = r'''#!/usr/bin/env python3
 import json, os, subprocess, sys
@@ -81,7 +81,7 @@ class RunnerCase(unittest.TestCase):
                        "git -c user.email=t@t -c user.name=t commit -qm init", cwd=self.repo, shell=True, check=True)
         self.env = {**os.environ, "PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}",
                     "RAVEND_HOME": str(base / "home"), "FAKE_SCRIPT": str(base / "script.json"),
-                    "FAKE_LOG": str(base / "calls.json"), "FAKE_RAVEND": str(Path(ravend.__file__)),
+                    "FAKE_LOG": str(base / "calls.json"), "FAKE_RAVEND": str(Path(__file__).resolve().parent.parent / "scripts" / "ravend.py"),
                     "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
                     "GIT_COMMITTER_EMAIL": "t@t"}
         os.environ["RAVEND_HOME"] = self.env["RAVEND_HOME"]
@@ -192,6 +192,18 @@ class RunnerCase(unittest.TestCase):
         self.assertNotIn("mcp__chrome-devtools", allowed["spec"])
         self.assertIn("mcp__chrome-devtools", allowed["verify"])
         self.assertNotIn("mcp__playwright", allowed["verify"])  # a browser MCP was chosen
+
+    def test_gate_commands_are_allowed_narrowly(self):
+        profile = json.loads((self.data / "profile.json").read_text())
+        profile["gate"]["fast"].append({"name": "lint", "run": "npx eslint {files}"})
+        ravend.save_json(self.data / "profile.json", profile)
+        res, _ = self.run_pipeline({**self.SPEC_SMALL, **self.OK}, "x")
+        self.assertEqual(res.returncode, 0, res.stdout)
+        allowed = self.calls[1]["args"]
+        self.assertIn("Bash(npx eslint *)", allowed)
+        self.assertIn("Bash(node --test *)", allowed)
+        self.assertNotIn("Bash(npx *)", allowed)
+        self.assertNotIn("Bash(node *)", allowed)
 
     def test_second_run_on_the_same_worktree_is_refused(self):
         subprocess.run(["git", "worktree", "add", "-q", "-b", "feat/s", str(self.worktree()), "main"],

@@ -1,0 +1,28 @@
+schema_version: "1.0"
+name: init-asks-what-to-redo
+description: Running /ravend:init on a repository that already has a profile shows what is configured and asks which parts to redo, instead of silently rebuilding the profile. (In the eval's print mode the question may come as text.)
+tags: [init]
+context:
+  scaffold_script: scaffold.sh
+execution:
+  prompt: /ravend:init
+  max_turns: 20
+  timeout_seconds: 400
+  allowed_tools: [Read, Glob, Grep, Skill, Bash, Write, Edit, AskUserQuestion]
+  env:
+    EVAL_RAVEND_HOME: .ravend-home
+runs: 1
+graders:
+  - type: tool_used
+    name: profile-not-rewritten
+    tool: Write
+    input_match: "profile.json"
+    min: 0
+    max: 0
+  - type: llm
+    name: asks-what-to-redo
+    criteria: >-
+      The agent recognizes the existing local profile (node stack, gate running `node --test`), summarizes it
+      briefly, and asks the user which parts to redo (gate commands, project notes, MCP integrations, terminal
+      command) — with AskUserQuestion or, when that tool is unavailable, in its message — instead of
+      re-detecting everything and overwriting the profile without asking.

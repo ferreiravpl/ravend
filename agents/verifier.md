@@ -1,6 +1,6 @@
 ---
 name: verifier
-description: Writes and runs missing E2E/visual/API tests for specific acceptance criteria of a Ravend spec, exploring the running UI with the Playwright MCP when needed. Keeps noisy browser snapshots and logs out of the main session. Dispatched by /ravend:verify; never changes production code.
+description: Writes and runs missing E2E/visual/API tests for specific acceptance criteria of a Ravend spec, exploring the running UI with the developer's browser MCP when needed. Keeps noisy browser snapshots and logs out of the main session. Dispatched by /ravend:verify; never changes production code.
 model: sonnet
 color: green
 ---

@@ -297,7 +297,7 @@ Isso cria `~/.local/bin/ravend`, que sempre aponta para a versão instalada do p
 
 ## Referência
 
-Detalhes de funcionamento. Não é preciso ler para usar.
+Detalhes de funcionamento. Não é preciso ler para usar. A arquitetura completa (camadas, fluxo, módulos, o que é garantido por código) está em [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ### Onde ficam os dados
 
@@ -366,7 +366,7 @@ claude plugin validate . && claude plugin validate skills --strict && claude plu
 claude plugin eval . --scaffold --trust-plugin --allow-tools Bash Write Edit Agent --runs 1 --ablation none
 ```
 
-Os evals em [`evals/`](evals/) usam um repositório de exemplo e verificam que uma mudança trivial não gera spec, que uma demanda grande gera spec large com critérios testáveis, que o build é test-first e roda o gate, e que o review pega um bug de limite que a suíte verde não pega.
+Os evals em [`evals/`](evals/) usam um repositório de exemplo e verificam o tamanho da spec (trivial e large), o build test-first com gate, o review que pega um bug de limite, o `continue` seguindo o `next`, o `ship` recusando quando a spec não está pronta e o `init` perguntando o que refazer.
 
 ```
 .claude-plugin/   plugin.json, marketplace.json
@@ -374,9 +374,10 @@ skills/           start, continue, doctor, init, spec, build, verify, review, sh
                   api-tests, e2e-playwright, stack-*
 agents/           reviewer, verifier, implementer
 hooks/hooks.json  SessionStart, PreToolUse, PostToolUse, Stop
-scripts/          ravend.py (runtime + máquina de estados) · ravend_auto.py (ravend auto)
+scripts/          ravend.py (entrada da CLI) · ravend_lib/ (runtime) · ravend_auto.py (ravend auto)
 tests/            testes do runtime e do ravend auto
 evals/            cenários de avaliação + repositório de exemplo
+docs/             ARCHITECTURE.md
 ```
 
 ## Licença

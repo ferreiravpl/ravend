@@ -8,9 +8,9 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-import ravend  # noqa: E402
+import ravend_lib as ravend  # noqa: E402
 
-SCRIPT = Path(ravend.__file__)
+SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "ravend.py"
 
 
 def sh(cmd, cwd, **env):
@@ -343,6 +343,20 @@ class Flow(RepoCase):
         self.assertEqual(ravend.next_action(self.repo)["action"], "choose")
         sh("git switch -q -c feat/other", self.repo)
         self.assertEqual(ravend.next_action(self.repo)["slug"], "other")
+
+
+class App(RepoCase):
+    def test_app_running_from_another_checkout_blocks_a_second_start(self):
+        sleeper = subprocess.Popen(["sleep", "30"])
+        try:
+            ravend.save_json(self.data / "state" / "other-checkout" / "app.json", {"api": sleeper.pid})
+            ok, msg = ravend.app_start(self.repo, {"app": {"name": "api", "start": "true"}})
+            self.assertFalse(ok)
+            self.assertIn("other-checkout", msg)
+        finally:
+            sleeper.kill()
+            sleeper.wait()
+        self.assertIsNone(ravend.app_owner(self.repo))  # dead pids do not block
 
 
 class Doctor(RepoCase):

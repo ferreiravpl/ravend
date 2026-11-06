@@ -6,7 +6,8 @@ This repo is a Claude Code plugin (and its own marketplace). User-facing docs: R
 - `skills/*/SKILL.md` — prompts. Bodies in English (token-efficient); `description` and `argument-hint` in pt-BR (shown in the `/` menu); user-facing output follows the user's language. Keep each SKILL.md short; put long material in `references/`.
 - `agents/*.md` — only reviewer, verifier, implementer. Add an agent only for context isolation or independence, never for "role play".
 - `hooks/hooks.json` → `scripts/ravend.py hook <event>`. Hooks must be no-ops in repos without a local profile and must never crash a session.
-- `scripts/ravend.py` — runtime (stdlib only, Python 3.8+), including the flow state machine (`next`) and the state records (`task done`, `verify record`, `review record`, `spec ...`). `scripts/ravend_auto.py` — headless runner (`ravend auto`), driven by the same `next`.
+- `scripts/ravend.py` — CLI entry point; the runtime lives in `scripts/ravend_lib/` (stdlib only, Python 3.8+), one module per responsibility: core, gating, mcp, detection, flow (state machine `next` + state records), diagnostics, hooks, cli. Modules import only modules listed before them (no cycles). `scripts/ravend_auto.py` — headless runner (`ravend auto`), driven by the same `next`.
+- `docs/ARCHITECTURE.md` — architecture reference (pt-BR). A structural change (new file, module, stage) updates it in the same PR.
 - The order of stages lives only in `next_action` (ravend.py). Skills and the runner ask it; never encode stage order in a prompt.
 - Per-project data lives in `~/.ravend/projects/<id>/` (`RAVEND_HOME`); nothing is ever written into the target repo.
 

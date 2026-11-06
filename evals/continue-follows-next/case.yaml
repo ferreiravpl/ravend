@@ -1,0 +1,37 @@
+schema_version: "1.0"
+name: continue-follows-next
+description: /ravend:continue asks the runtime for the next step instead of deciding it, and runs that step — here, an approved spec with T1 pending must go to build, not to spec, verify or review.
+tags: [continue, flow]
+context:
+  scaffold_script: scaffold.sh
+execution:
+  prompt: /ravend:continue
+  max_turns: 30
+  timeout_seconds: 600
+  allowed_tools: [Read, Glob, Grep, Skill, Bash, Write, Edit]
+  env:
+    EVAL_RAVEND_HOME: .ravend-home
+runs: 1
+graders:
+  - type: tool_used
+    name: asked-next
+    tool: Bash
+    input_match: "next --json"
+    min: 1
+  - type: tool_used
+    name: ran-build
+    tool: Skill
+    input_match: "build"
+    min: 1
+  - type: tool_used
+    name: did-not-review
+    tool: Skill
+    input_match: "review"
+    min: 0
+    max: 0
+  - type: llm
+    name: follows-the-state
+    criteria: >-
+      The agent reports that the next step for spec cart-coupon is implementing task T1 (as answered by
+      `ravend.py next`) and proceeds with the build stage. It does not rewrite the spec, does not jump to
+      verification, review or opening a PR, and does not invent a different next step.
