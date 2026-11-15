@@ -1,13 +1,96 @@
 """`ravend doctor`: checks the installation and the project setup and says how to fix each problem."""
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 from .core import PLUGIN_ROOT, data_dir, load_json, load_profile
+from .detection import ci_workflows
 from .mcp import integrations, mcp_servers
+
+# --------------------------------------------------------------------------- gate × CI
+# What CI runs is the team's definition of "green". The local gate.full should run at least the same checks,
+# or "green here, red in CI" becomes routine. The comparison is by tool + subcommand, not by exact text.
+
+SETUP_WORDS = {"echo", "cd", "export", "mkdir", "cp", "mv", "rm", "ls", "cat", "curl", "wget", "sudo", "apt", "apt-get",
+               "chmod", "set", "source", "printf", "tee", "test", "[", "true", "unzip", "tar", "if", "then", "else", "fi",
+               "for", "do", "done", "while", "env", "sleep", "which", "git", "gh", "aws", "docker", "base64", "jq", "sed",
+               "awk", "grep", "eval", "kubectl", "pip", "pip3", "python", "python3", "node", "corepack", "sdk", "exit"}
+SKIP_SUBCOMMANDS = {"terraform": {"init", "apply", "plan", "output", "workspace", "version"},
+                    "helm": {"upgrade", "install", "package", "push", "registry", "repo", "dependency", "version"},
+                    "npm": {"ci", "install", "i", "publish"}, "pnpm": {"install", "i", "publish"},
+                    "yarn": {"install", "publish"}}
+MAVEN_PHASES = ["validate", "compile", "test-compile", "test", "package", "integration-test", "verify", "install", "deploy"]
+GRADLE_COVERS = {"build": {"build", "check", "test", "assemble", "compileJava", "compileTestJava"}, "check": {"check", "test"}}
+
+
+def _keys(cmd: str) -> set[str]:
+    return {k for part in re.split(r"&&|\|\||[|;]", cmd) for k in _segment_keys(part)}
+
+
+def _segment_keys(cmd: str) -> set[str]:
+    words = [w for w in cmd.split() if not re.match(r"^[A-Z_][A-Z0-9_]*=", w)]
+    if not words:
+        return set()
+    tool = words[0]
+    if tool in ("npx", "pnpx", "bunx") and len(words) > 1:
+        words = words[1:]
+        tool = words[0]
+    tool = {"./mvnw": "mvn", "mvnw": "mvn", "./gradlew": "gradle", "gradlew": "gradle", "tofu": "terraform"}.get(tool, tool)
+    rest = [w for w in words[1:] if not w.startswith("-") and "=" not in w]
+    if tool in SETUP_WORDS or tool.startswith(("$", "#")):
+        return set()
+    if tool == "mvn":
+        profiles = sorted({p for w in words if w.startswith("-P") for p in w[2:].split(",") if p}
+                          | ({"native"} if any(re.match(r"-D(native|quarkus\.native\.enabled=true|quarkus\.package\.type=native)", w)
+                                               for w in words) else set()))
+        tag = f" [{','.join(profiles)}]" if profiles else ""
+        phases = [w for w in rest if w in MAVEN_PHASES]
+        keys = {f"mvn {w}{tag}" for w in rest if ":" in w and not w.startswith("$")}
+        return keys | ({f"mvn {max(phases, key=MAVEN_PHASES.index)}{tag}"} if phases else set())
+    if tool == "gradle":
+        return {f"gradle {w.split(':')[-1]}" for w in rest if re.match(r"^[\w:-]+$", w)}
+    sub = rest[0] if rest and re.match(r"^[a-z][\w:-]*$", rest[0]) else ""
+    if tool in ("npm", "pnpm", "yarn") and sub == "run" and len(rest) > 1:
+        sub = rest[1]
+    if sub in SKIP_SUBCOMMANDS.get(tool, set()):
+        return set()
+    return {f"{tool} {sub}".strip()}
+
+
+def _covered(key: str, gate_keys: set[str]) -> bool:
+    if key in gate_keys:
+        return True
+    tool, _, sub = key.partition(" ")
+    if tool == "mvn":
+        phase, _, tag = sub.partition(" ")
+        if phase not in MAVEN_PHASES:
+            return False
+        for k in gate_keys:
+            g_tool, _, g_sub = k.partition(" ")
+            g_phase, _, g_tag = g_sub.partition(" ")
+            if g_tool == "mvn" and g_tag == tag and g_phase in MAVEN_PHASES \
+                    and MAVEN_PHASES.index(g_phase) >= MAVEN_PHASES.index(phase):
+                return True
+        return False
+    if tool == "gradle":
+        return any(sub in GRADLE_COVERS.get(k[7:], ()) for k in gate_keys if k.startswith("gradle "))
+    return False
+
+
+def ci_drift(root: Path, profile: dict) -> list[str]:
+    """CI commands (tool + subcommand) that no gate.full step runs."""
+    gate_keys = {k for step in (profile.get("gate") or {}).get("full") or [] for k in _keys(step.get("run") or "")}
+    missing: dict[str, str] = {}
+    for wf in ci_workflows(root):
+        for cmd in wf["runs"]:
+            for key in _keys(cmd):
+                if not _covered(key, gate_keys):
+                    missing.setdefault(key, wf["file"])
+    return [f"`{k}` ({f})" for k, f in missing.items()]
 
 # --------------------------------------------------------------------------- doctor
 
@@ -55,6 +138,13 @@ def doctor(root: Path | None, probe: bool = True) -> list[dict]:
                     missing.append(f"{step.get('name', 'passo')}: `{word}` não encontrado em ./{step.get('cwd', '.')}")
             checks.append(_check(f"gate {mode}", not missing, "; ".join(missing) or f"{len(steps)} passo(s)",
                                  "corrija o comando no profile.json ou rode /ravend:init" if missing else ""))
+        if ci_workflows(root):
+            drift = ci_drift(root, profile)
+            checks.append(_check("gate × CI", not drift or None,
+                                 "o gate full cobre o que o CI roda" if not drift else
+                                 "o CI roda e o gate full não: " + ", ".join(drift[:6]),
+                                 "inclua esses passos no gate.full (rode /ravend:init → comandos do gate) para "
+                                 "não descobrir o vermelho só no PR" if drift else ""))
         chosen = integrations(profile)
         if chosen:
             known = {r["name"]: r for r in mcp_servers(root, probe=probe)}

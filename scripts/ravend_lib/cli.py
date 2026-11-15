@@ -11,13 +11,14 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from .core import PLUGIN_ROOT, base_branch, data_dir, ensure_dirs, load_profile, project_id, repo_root, save_json, state_dir
+from .core import PLUGIN_ROOT, base_branch, data_dir, ensure_dirs, git, load_profile, project_id, repo_root, save_json, state_dir
+from .ci import DEFAULT_WAIT_MINUTES, ci_check, print_ci, record_ci
 from .detection import detect
 from .diagnostics import doctor, print_doctor
-from .flow import (FlowError, _set_frontmatter, _verify_ok, mark_task_done, next_action, print_next, record_review,
-                   record_verify, set_spec_status, spec_file, status)
+from .flow import (FlowError, _set_frontmatter, _verify_ok, approve_spec, mark_task_done, next_action, print_next,
+                   record_review, record_verify, set_spec_status, ship_spec, spec_file, status)
 from .gating import _apps, _http_ok, app_start, app_stop, gate
-from .hooks import _hook_input, hook_post_edit, hook_pre_edit, hook_session_start, hook_stop
+from .hooks import _hook_input, hook_post_edit, hook_pre_command, hook_pre_edit, hook_session_start, hook_stop
 from .mcp import ROLES, STAGES, integrations, mcp_servers
 
 CLI_SHIM = """#!/usr/bin/env python3
@@ -115,10 +116,17 @@ def build_parser() -> argparse.ArgumentParser:
     c = cmd("integrations", "papéis de MCP e os servidores escolhidos para cada um")
     c.add_argument("--stage", choices=STAGES, help="só os papéis usados nesta etapa")
 
-    c = cmd("spec", "registra a aprovação, a conclusão ou o abandono de uma spec")
-    c.add_argument("action", choices=["approve", "done", "abandon"])
+    c = cmd("spec", "registra a aprovação, o PR aberto, a conclusão ou o abandono de uma spec")
+    c.add_argument("action", choices=["approve", "shipped", "done", "abandon"])
     c.add_argument("slug")
-    c.add_argument("--pr", metavar="URL", help="link do PR (com done)")
+    c.add_argument("--pr", metavar="URL", help="link do PR (com shipped ou done)")
+    c = cmd("ci", "lê os checks de CI do PR da spec e registra o resultado (o next decide: esperar, corrigir ou merge)")
+    c.add_argument("slug")
+    c.add_argument("--wait", nargs="?", type=float, const=-1, metavar="MINUTOS",
+                   help=f"esperar até nenhum check estar pendente (padrão: profile.ci.wait_minutes ou 30)")
+    c.add_argument("--state", choices=["pass", "fail", "pending"],
+                   help="registrar à mão (sem gh: o resultado visto pelo seu MCP de git)")
+    c.add_argument("--failed", action="append", default=[], metavar="CHECK", help="check que falhou (com --state fail)")
     c = cmd("task", "marca uma task da spec como concluída")
     c.add_argument("action", choices=["done"])
     c.add_argument("slug")
@@ -150,7 +158,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _run_hook(event: str) -> int:
     inp = _hook_input()
-    handler = {"session-start": hook_session_start, "pre-edit": hook_pre_edit,
+    handler = {"session-start": hook_session_start, "pre-edit": hook_pre_edit, "pre-command": hook_pre_command,
                "post-edit": hook_post_edit, "stop": hook_stop}.get(event)
     if not handler:
         return 0
@@ -165,12 +173,31 @@ def _record(args: argparse.Namespace, root: Path) -> int:
     d = data_dir(root)
     try:
         if args.cmd == "spec":
-            status_value = {"approve": "approved", "done": "done", "abandon": "abandoned"}[args.action]
-            set_spec_status(d, args.slug, status_value, status_value + (f" — PR {args.pr}" if args.pr else ""))
-            if args.pr:
+            status_value = {"approve": "approved", "shipped": "shipped", "done": "done", "abandon": "abandoned"}[args.action]
+            if args.action == "shipped" and not args.pr:
+                raise FlowError("informe o link do PR: ravend spec shipped <slug> --pr <url>")
+            note = status_value + (f" — PR {args.pr}" if args.pr else "")
+            if args.action == "approve":
+                approve_spec(d, args.slug, note)
+            elif args.action == "shipped":
+                ship_spec(d, args.slug, args.pr)
+            else:
+                set_spec_status(d, args.slug, status_value, note)
+            if args.pr and args.action != "shipped":
                 path = spec_file(d, args.slug)
                 path.write_text(_set_frontmatter(path.read_text(encoding="utf-8"), "pr", args.pr), encoding="utf-8")
             print(f"[ravend] spec {args.slug}: {status_value}")
+        elif args.cmd == "ci":
+            if args.state:
+                head = git(["rev-parse", "HEAD"], root)
+                print_ci(record_ci(root, args.slug, args.state, head, args.failed, []))
+            else:
+                profile = load_profile(root) or {}
+                wait = args.wait
+                if wait is not None and wait < 0:
+                    wait = float((profile.get("ci") or {}).get("wait_minutes", DEFAULT_WAIT_MINUTES))
+                print_ci(ci_check(root, args.slug, wait))
+            print_next(next_action(root, args.slug))
         elif args.cmd == "task":
             print(f"[ravend] {args.slug}: {mark_task_done(d, args.slug, args.task)} concluída")
         elif args.cmd == "verify":
@@ -285,7 +312,7 @@ def main(argv: list[str]) -> int:
         else:
             print_next(info)
         return 0
-    if args.cmd in ("spec", "task", "verify", "review"):
+    if args.cmd in ("spec", "task", "verify", "review", "ci"):
         return _record(args, root)
     parser.print_help()
     return 2

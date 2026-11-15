@@ -1,5 +1,5 @@
 {
-  "description": "Ravend: inject local project context, protect sensitive paths, format edited files and enforce the quality gate while a build is armed. All hooks are no-ops in repositories without a local Ravend profile.",
+  "description": "Ravend: inject local project context, protect sensitive paths and related repositories, keep the reviewer read-only and the verifier on tests, block commands that change real infrastructure, deploy, merge or touch secrets, format edited files and enforce the quality gate while a build is armed. All hooks are no-ops in repositories without a local Ravend profile.",
   "hooks": {
     "SessionStart": [
       {
@@ -19,6 +19,16 @@
           {
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/ravend.py\" hook pre-edit",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "^Bash$|^mcp__.*(aws|terraform|kube|k8s|helm|github|git).*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/ravend.py\" hook pre-command",
             "timeout": 10
           }
         ]

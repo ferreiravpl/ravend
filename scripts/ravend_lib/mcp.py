@@ -28,6 +28,8 @@ ROLES = {
     "api":           ("Call/test HTTP APIs, collections, contracts (Postman, api-test)", ["verify"]),
     "database":      ("Inspect schema and data (Postgres, MySQL, Mongo…), read-only", ["spec", "build", "verify"]),
     "observability": ("Errors, logs, traces, metrics (Sentry, Datadog, Grafana)", ["spec", "verify"]),
+    "cloud":         ("Cloud account, read-only: resources, queues, IAM, logs (AWS API, GCP, Azure); "
+                      "mutating calls are blocked by the command guard", ["spec", "build", "verify"]),
 }
 STAGES = ["spec", "build", "verify", "review", "ship"]
 

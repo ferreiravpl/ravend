@@ -3,7 +3,7 @@
 
 Uso (dentro do repositório, depois do /ravend:init):
     ravend auto "Adicionar paginação em GET /products"   para no review; pausa antes do build se a spec for large
-    ravend auto PROJ-123 --pr                             vai até abrir o PR
+    ravend auto PROJ-123 --pr                             abre o PR e acompanha o CI até ficar verde
     ravend auto "#45" --no-pause --pr                     sem pausa para aprovar a spec large
     ravend auto --resume add-products-pagination --pr     continua uma spec que você já aprovou
 
@@ -135,6 +135,9 @@ class Runner:
             cmd += ["--model", self.args.model]
         if self.plugin_dir:
             cmd += ["--plugin-dir", self.plugin_dir]
+        for repo in ravend.related_repos(self.root, self.profile):
+            if repo["exists"]:
+                cmd += ["--add-dir", repo["abs"]]  # read-only by the pre-edit hook
         cmd += self.args.claude_arg or []
         self.calls += 1
         self.say(f"{stage}: claude -p {prompt!r}")
@@ -243,7 +246,7 @@ class Runner:
             action = info["action"]
             self.say(f"próximo: {action} — {info['message']}")
             key = (action, info.get("task"), info.get("fix"), info.get("message"))
-            if action in ("build", "fix") and key == previous:
+            if action in ("build", "fix", "ship") and key == previous:
                 return self.fail(f"a etapa {action} não avançou o estado ({info['message']})", 3)
             previous = key
             if action == "approve":
@@ -251,7 +254,7 @@ class Runner:
                     self.say(f"pausa: aprove a spec e continue com: ravend auto --resume {slug}")
                     self.summary()
                     return 0
-                ravend.set_spec_status(self.data, slug, "approved", "aprovada (ravend auto)")
+                ravend.approve_spec(self.data, slug, "aprovada (ravend auto --no-pause/--resume)")
             elif action == "answer":
                 for q in info.get("questions", []):
                     self.say(f"  ? {q}")
@@ -290,8 +293,25 @@ class Runner:
                 if not out.get("pr_url"):
                     return self.fail(f"o ship não abriu o PR: {out.get('blocked') or 'sem motivo informado'}", 3)
                 self.say(f"PR: {out['pr_url']}")
-                if ravend.next_action(self.cwd, slug)["action"] != "done":
-                    ravend.set_spec_status(self.data, slug, "done", f"PR {out['pr_url']}")
+                fm = ravend._frontmatter(ravend._read(ravend.spec_file(self.data, slug)))
+                if fm.get("status") not in ("shipped", "done"):
+                    ravend.ship_spec(self.data, slug, out["pr_url"])
+            elif action == "ci":
+                wait = float((self.profile.get("ci") or {}).get("wait_minutes", ravend.DEFAULT_WAIT_MINUTES))
+                self.say(f"ci: acompanhando os checks do PR (até {wait:.0f} min), fora do modelo")
+                try:
+                    entry = ravend.ci_check(self.cwd, slug, wait)
+                except ravend.FlowError as exc:
+                    self.say(f"PR aberto: {info.get('pr')}. CI não acompanhado: {exc}")
+                    self.summary()
+                    return 0
+                self.say(f"ci: {entry['state']}" + (f" · {'; '.join(entry['failed'])}" if entry["failed"] else ""))
+                if entry["state"] == "pending":
+                    self.say(f"o CI ainda está rodando; continue depois com: ravend auto --resume {slug} --pr")
+                    self.summary()
+                    return 0
+            elif action == "merge":
+                self.say(info["message"])
                 self.summary()
                 return 0
             elif action == "human":

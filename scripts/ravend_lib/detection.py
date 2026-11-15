@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
-from .core import SKIP_DIRS, _read, load_json
+from .core import SKIP_DIRS, _read, load_json, project_id, ravend_home
 
 # --------------------------------------------------------------------------- detection
 
@@ -18,6 +19,21 @@ def detect(root: Path) -> dict:
             continue
         names = set(filenames)
         mod: dict = {"path": str(rel) if str(rel) != "." else "."}
+        if any(n.endswith(".tf") for n in names):
+            mod.update({"stack": "terraform", "build": "terragrunt" if "terragrunt.hcl" in names else "terraform",
+                        "signals": [s for s, hit in (("tflint", ".tflint.hcl" in names),
+                                                     ("terraform-test", any(n.endswith(".tftest.hcl") for n in names)),
+                                                     ("lockfile", ".terraform.lock.hcl" in names)) if hit]})
+            found.append(mod)
+            continue
+        if "Chart.yaml" in names:
+            mod.update({"stack": "helm", "build": "helm",
+                        "signals": [s for s, hit in (("values-per-env", any(re.match(r"values-.+\.ya?ml$", n) for n in names)),
+                                                     ("chart-tests", (Path(dirpath) / "templates" / "tests").is_dir()),
+                                                     ("unittest", (Path(dirpath) / "tests").is_dir())) if hit]})
+            found.append(mod)
+            dirnames[:] = []
+            continue
         build_file = next((n for n in ("pom.xml", "build.gradle.kts", "build.gradle") if n in names), None)
         if build_file:
             text = _read(Path(dirpath) / build_file)
@@ -52,5 +68,67 @@ def detect(root: Path) -> dict:
                 mod["signals"].append("playwright.config")
             found.append(mod)
     compose = [str(p.relative_to(root)) for p in root.glob("*compose*.y*ml")]
-    return {"root": str(root), "modules": found, "stacks": sorted({m["stack"] for m in found}),
-            "docker_compose": compose, "has_claude_md": (root / "CLAUDE.md").exists()}
+    workflows = ci_workflows(root)
+    stacks = {m["stack"] for m in found} | ({"github-actions"} if workflows else set())
+    return {"root": str(root), "modules": found, "stacks": sorted(stacks), "docker_compose": compose,
+            "ci": {"provider": "github-actions", "workflows": workflows} if workflows else None,
+            "siblings": sibling_repos(root), "has_claude_md": (root / "CLAUDE.md").exists()}
+
+
+# --------------------------------------------------------------------------- CI workflows
+# A minimal reader for `run:` steps of GitHub Actions workflows (no YAML dependency): single-line `run: cmd`
+# and block scalars `run: |` / `run: >`. Good enough to compare what CI runs with the local gate.
+
+RUN_RE = re.compile(r"^(?P<indent>\s*)(?:-\s+)?run:\s*(?P<value>.*)$")
+
+
+def workflow_runs(text: str) -> list[str]:
+    lines, cmds, i = text.splitlines(), [], 0
+    while i < len(lines):
+        m = RUN_RE.match(lines[i])
+        if not m:
+            i += 1
+            continue
+        key_col = lines[i].index("run:")
+        value = m.group("value").strip()
+        i += 1
+        if value and value[0] not in "|>":
+            cmds.append(value.strip("'\""))
+            continue
+        while i < len(lines) and (not lines[i].strip() or len(lines[i]) - len(lines[i].lstrip()) > key_col):
+            line = lines[i].strip()
+            if line and not line.startswith("#"):
+                cmds.append(line)
+            i += 1
+    joined: list[str] = []
+    for c in cmds:  # shell line continuations
+        if joined and joined[-1].endswith("\\"):
+            joined[-1] = joined[-1][:-1].rstrip() + " " + c
+        else:
+            joined.append(c)
+    return joined
+
+
+def ci_workflows(root: Path) -> list[dict]:
+    out = []
+    for wf in sorted((root / ".github" / "workflows").glob("*.y*ml")):
+        text = _read(wf)
+        uses = sorted(set(re.findall(r"uses:\s*([\w.-]+/[\w.-]+)", text)))
+        out.append({"file": str(wf.relative_to(root)), "runs": workflow_runs(text), "uses": uses})
+    return out
+
+
+def sibling_repos(root: Path) -> list[dict]:
+    """Other git repos next to this one (same parent folder), and whether this developer already configured
+    Ravend there — /ravend:init offers to start from a sibling's profile and to mark siblings as related."""
+    out = []
+    try:
+        candidates = sorted(p for p in root.parent.iterdir() if p.is_dir() and p != root and (p / ".git").exists())
+    except OSError:
+        return out
+    for path in candidates[:40]:
+        pid = project_id(path)
+        profile = load_json(ravend_home() / "projects" / pid / "profile.json")
+        out.append({"path": str(path), "name": path.name, "project_id": pid, "has_profile": bool(profile),
+                    "stacks": (profile or {}).get("stacks", [])})
+    return out

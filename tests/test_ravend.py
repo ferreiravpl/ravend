@@ -250,7 +250,7 @@ branch: feat/s
 """
 
 
-class Flow(RepoCase):
+class FlowBase(RepoCase):
     def write_spec(self, tier="small", status="approved"):
         path = ravend.spec_file(self.data, "s")
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -260,6 +260,8 @@ class Flow(RepoCase):
     def nxt(self):
         return ravend.next_action(self.repo, "s")
 
+
+class Flow(FlowBase):
     def test_no_spec_points_to_start_and_one_spec_is_picked_automatically(self):
         self.assertEqual(ravend.next_action(self.repo)["action"], "start")
         self.write_spec()
@@ -371,6 +373,203 @@ class Doctor(RepoCase):
         self.assertIn("`./mvnw` não encontrado", res.stdout)
         (self.data / "profile.json").unlink()
         self.assertIn("rode /ravend:init", self.run_cli("doctor", "--no-probe").stdout)
+
+
+FAKE_GH = r"""#!/usr/bin/env python3
+import json, os, sys
+from pathlib import Path
+args = sys.argv[1:]
+if args[:2] == ["pr", "view"]:
+    print(Path(os.environ["FAKE_GH_PR"]).read_text()); sys.exit(0)
+if args[:2] == ["run", "view"]:
+    print("step 1 ok\nERROR: native image build failed: class X not registered for reflection\n"); sys.exit(0)
+sys.exit(1)
+"""
+
+
+class RiskAndCI(FlowBase):
+    def setUp(self):
+        super().setUp()
+        self.bin = Path(self.tmp.name) / "bin"
+        self.bin.mkdir()
+        (self.bin / "gh").write_text(FAKE_GH)
+        (self.bin / "gh").chmod(0o755)
+        self.pr_json = Path(self.tmp.name) / "pr.json"
+        self.env = {"PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}", "FAKE_GH_PR": str(self.pr_json),
+                    "RAVEND_CI_INTERVAL": "0"}
+
+    def cli(self, *args, **kw):
+        return self.run_cli(*args, **{**self.env, **kw})
+
+    def set_profile(self, **extra):
+        profile = json.loads((self.data / "profile.json").read_text())
+        profile.update(extra)
+        ravend.save_json(self.data / "profile.json", profile)
+
+    def verified_and_reviewed(self, review='{"verdict": "APPROVED", "findings": []}'):
+        self.run_cli("gate", "full")
+        self.run_cli("verify", "record", "s")
+        self.run_cli("review", "record", "s", stdin=review)
+
+    def pr(self, state="OPEN", head=None, checks=()):
+        head = head or ravend.git(["rev-parse", "HEAD"], self.repo)
+        self.pr_json.write_text(json.dumps({"state": state, "headRefOid": head, "url": "https://example.com/pr/9",
+                                            "statusCheckRollup": list(checks)}))
+
+    def test_risk_area_needs_human_approval_and_review_lenses_even_when_small(self):
+        self.set_profile(risk=[{"name": "dinheiro", "paths": ["src/*"], "lenses": ["money", "Concurrency"]},
+                               {"name": "docs", "paths": ["docs/**"], "lenses": ["contract"]}])
+        self.write_spec()  # small, already approved by the spec skill
+        info = self.nxt()
+        self.assertEqual(info["action"], "approve")
+        self.assertEqual([h["name"] for h in info["risk"]], ["dinheiro"])  # from the task's declared files
+        self.assertEqual(self.run_cli("spec", "approve", "s").returncode, 0)
+        self.assertEqual(self.nxt()["action"], "build")
+        self.run_cli("task", "done", "s", "T1")
+        self.run_cli("task", "done", "s", "T2")
+        self.verified_and_reviewed()
+        info = self.nxt()
+        self.assertEqual((info["action"], info["lenses"]), ("review", ["concurrency", "money"]))
+        self.run_cli("review", "record", "s", stdin='{"verdict": "APPROVED", "findings": [], "lenses": ["money"]}')
+        self.assertIn("concurrency", self.nxt()["message"])
+        self.run_cli("review", "record", "s",
+                     stdin='{"verdict": "APPROVED", "findings": [], "lenses": ["money", "concurrency"]}')
+        self.assertEqual(self.nxt()["action"], "ship")
+
+    def test_after_the_pr_ci_is_followed_until_merge_and_red_ci_is_a_fix_round(self):
+        self.write_spec()
+        for t in ("T1", "T2"):
+            self.run_cli("task", "done", "s", t)
+        self.verified_and_reviewed()
+        self.assertEqual(self.run_cli("spec", "shipped", "s").returncode, 2)  # needs --pr
+        self.run_cli("spec", "shipped", "s", "--pr", "https://example.com/pr/9")
+        self.assertEqual(self.nxt()["action"], "ci")
+        self.pr(checks=[{"__typename": "CheckRun", "name": "build", "status": "IN_PROGRESS", "conclusion": ""}])
+        self.cli("ci", "s")
+        self.assertIn("Aguardando", self.nxt()["message"])
+        self.pr(checks=[{"__typename": "CheckRun", "name": "native", "status": "COMPLETED", "conclusion": "FAILURE",
+                         "detailsUrl": "https://github.com/o/r/actions/runs/42/job/7"},
+                        {"__typename": "StatusContext", "context": "lint", "state": "SUCCESS"}])
+        res = self.cli("ci", "s", "--wait", "1")
+        self.assertIn("VERMELHO", res.stdout)
+        info = self.nxt()
+        self.assertEqual((info["action"], info["fix"]), ("fix", "ci"))
+        self.assertIn("native", info["problem"])
+        self.assertIn("not registered for reflection", Path(info["logs"][0]).read_text())
+        # the fix is a new commit: verify and review again, then push it to the PR, then CI again
+        (self.repo / "src" / "sum.js").write_text("export const sum = (a, b) => a + b; // native fix\n")
+        sh("git -c user.email=t@t -c user.name=t commit -qam fix", self.repo)
+        self.assertEqual(self.nxt()["action"], "verify")
+        self.verified_and_reviewed()
+        self.assertEqual(self.nxt()["action"], "ship")  # local commit not in the PR yet
+        self.pr(checks=[{"__typename": "CheckRun", "name": "native", "status": "COMPLETED", "conclusion": "SUCCESS"}])
+        self.cli("ci", "s")
+        self.assertEqual(self.nxt()["action"], "merge")
+        self.pr(state="MERGED", checks=[])
+        self.cli("ci", "s")
+        self.assertEqual(self.nxt()["action"], "done")
+
+    def test_ci_can_be_recorded_by_hand_without_gh(self):
+        self.write_spec()
+        for t in ("T1", "T2"):
+            self.run_cli("task", "done", "s", t)
+        self.verified_and_reviewed()
+        self.run_cli("spec", "shipped", "s", "--pr", "https://example.com/pr/9")
+        self.run_cli("ci", "s", "--state", "fail", "--failed", "e2e: timeout")
+        self.assertEqual(self.nxt()["fix"], "ci")
+        self.assertEqual(ravend.classify([{"name": "a", "status": "COMPLETED", "conclusion": "SKIPPED"}])[0], "pass")
+
+
+class Guards(RepoCase):
+    def pre(self, event, tool, **tool_input):
+        payload = {"tool_name": tool, "tool_input": tool_input}
+        agent = tool_input.pop("_agent", None)
+        if agent:
+            payload["agent_type"] = agent
+        res = self.hook(event, **payload)
+        return "deny" in res.stdout
+
+    def test_commands_that_change_real_infra_are_denied_but_reads_and_plans_pass(self):
+        self.assertTrue(self.pre("pre-command", "Bash", command="cd infra && terraform -chdir=x apply -auto-approve"))
+        self.assertTrue(self.pre("pre-command", "Bash", command="gh pr merge 3 --squash"))
+        self.assertFalse(self.pre("pre-command", "Bash", command="terraform plan -out tf.plan"))
+        self.assertFalse(self.pre("pre-command", "Bash", command='git commit -m "explica o terraform apply no CI"'))
+        self.assertTrue(self.pre("pre-command", "mcp__aws-api__call_aws", cli_command="aws sqs purge-queue --queue-url q"))
+        self.assertFalse(self.pre("pre-command", "mcp__aws-api__call_aws", cli_command="aws sqs get-queue-attributes --queue-url q"))
+        res = self.hook("pre-command", tool_name="Bash", tool_input={"command": "terraform apply"})
+        self.assertIn("deny", res.stdout)
+        res = subprocess.run([sys.executable, str(SCRIPT), "hook", "pre-command"], cwd=self.repo, capture_output=True,
+                             text=True, env={**os.environ, "RAVEND_GUARD": "off"},
+                             input=json.dumps({"cwd": str(self.repo), "tool_name": "Bash",
+                                               "tool_input": {"command": "terraform apply"}}))
+        self.assertNotIn("deny", res.stdout)
+
+    def test_reviewer_is_read_only_and_verifier_only_touches_tests(self):
+        src = str(self.repo / "src" / "sum.js")
+        self.assertTrue(self.pre("pre-edit", "Edit", file_path=src, _agent="ravend:reviewer"))
+        self.assertTrue(self.pre("pre-command", "Bash", command="git checkout main", _agent="ravend:reviewer"))
+        self.assertFalse(self.pre("pre-command", "Bash", command="git diff main...HEAD | head", _agent="ravend:reviewer"))
+        self.assertTrue(self.pre("pre-edit", "Write", file_path=src, _agent="ravend:verifier"))
+        self.assertFalse(self.pre("pre-edit", "Write", file_path=str(self.repo / "test" / "x.test.js"), _agent="ravend:verifier"))
+        self.assertFalse(self.pre("pre-edit", "Edit", file_path=src))  # the main session may edit code
+
+    def test_related_repositories_are_read_only(self):
+        other = Path(self.tmp.name) / "contracts"
+        other.mkdir()
+        profile = json.loads((self.data / "profile.json").read_text())
+        profile["related_repos"] = [{"name": "contracts", "path": "../contracts", "use": "event records"}]
+        ravend.save_json(self.data / "profile.json", profile)
+        self.assertTrue(self.pre("pre-edit", "Write", file_path=str(other / "Event.java")))
+        self.assertIn("contracts=", self.hook("session-start").stdout)
+
+
+class InfraAndCI(RepoCase):
+    WORKFLOW = """name: ci
+on: [pull_request]
+jobs:
+  build:
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./mvnw -B -ntp verify
+      - name: native
+        run: |
+          ./mvnw -B package -Dnative \\
+            -DskipTests
+      - run: terraform fmt -check -recursive
+"""
+
+    def test_detects_terraform_helm_workflows_and_configured_siblings(self):
+        (self.repo / "infra" / "network").mkdir(parents=True)
+        (self.repo / "infra" / "network" / "main.tf").write_text('resource "x" "y" {}\\n')
+        (self.repo / "infra" / "network" / ".tflint.hcl").write_text("")
+        (self.repo / "chart" / "templates").mkdir(parents=True)
+        (self.repo / "chart" / "Chart.yaml").write_text("name: c\\n")
+        (self.repo / "chart" / "values-staging.yaml").write_text("")
+        (self.repo / ".github" / "workflows").mkdir(parents=True)
+        (self.repo / ".github" / "workflows" / "ci.yml").write_text(self.WORKFLOW)
+        sibling = Path(self.tmp.name) / "lib"
+        sibling.mkdir()
+        sh("git init -q", sibling)
+        ravend.save_json(ravend.data_dir(sibling) / "profile.json", {"stacks": ["quarkus"]})
+        info = json.loads(self.run_cli("detect").stdout)
+        stacks = {m["path"]: m for m in info["modules"]}
+        self.assertEqual(stacks["infra/network"]["stack"], "terraform")
+        self.assertIn("tflint", stacks["infra/network"]["signals"])
+        self.assertEqual(stacks["chart"]["signals"], ["values-per-env"])
+        self.assertIn("github-actions", info["stacks"])
+        self.assertIn("./mvnw -B package -Dnative -DskipTests", info["ci"]["workflows"][0]["runs"])
+        self.assertEqual([(s["name"], s["has_profile"]) for s in info["siblings"]], [("lib", True)])
+
+    def test_doctor_warns_when_ci_runs_what_the_gate_does_not(self):
+        (self.repo / ".github" / "workflows").mkdir(parents=True)
+        (self.repo / ".github" / "workflows" / "ci.yml").write_text(self.WORKFLOW)
+        profile = json.loads((self.data / "profile.json").read_text())
+        profile["gate"]["full"] = [{"name": "verify", "run": "node --test"}, {"name": "jvm", "run": "./mvnw -q verify"}]
+        ravend.save_json(self.data / "profile.json", profile)
+        drift = ravend.ci_drift(self.repo, profile)
+        self.assertEqual(drift, ["`mvn package [native]` (.github/workflows/ci.yml)",
+                                 "`terraform fmt` (.github/workflows/ci.yml)"])
+        self.assertIn("gate × CI", self.run_cli("doctor", "--no-probe").stdout)
 
 
 if __name__ == "__main__":
