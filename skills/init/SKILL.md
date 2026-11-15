@@ -12,7 +12,7 @@ Everything this skill writes goes to `<data_dir>` (`~/.ravend/projects/<project-
 `RV="python3 $RAVEND_ROOT/scripts/ravend.py"` (empty `RAVEND_ROOT` → this skill's base dir + `/../../scripts/ravend.py`).
 - `$RV project` → `data_dir`, `has_profile`, `base_branch`.
 - `$RV detect` → modules, stacks (incl. terraform, helm, github-actions), build tools, test runners, lint/format signals, compose files, `ci.workflows[].runs` (what CI executes) and `siblings` (repos next to this one, `has_profile` when you already configured them).
-- Existing profile → show a short summary and ask which parts to redo (AskUserQuestion, multiSelect): gate commands (steps 2–4), project notes (5), risk areas and related repos (6), MCP integrations (7), terminal command (8). Run only those.
+- Existing profile → show a summary of at most 5 lines and ask which parts to redo (AskUserQuestion, multiSelect): gate commands (steps 2–4), project notes (5), risk areas and related repos (6), MCP integrations (7), terminal command (8). Run only those.
 - No profile, and a sibling with `has_profile` shares a stack → offer to start from it (several services of one product usually build the same way): read `~/.ravend/projects/<its project_id>/profile.json` (or `$RAVEND_HOME`), keep gate/format/app/protected paths/integrations, then adjust module paths and commands to this repo in steps 2–3.
 
 ## 2. Confirm commands (read, don't guess)

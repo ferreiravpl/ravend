@@ -23,6 +23,6 @@ graders:
     name: asks-what-to-redo
     criteria: >-
       The agent recognizes the existing local profile (node stack, gate running `node --test`), summarizes it
-      briefly, and asks the user which parts to redo (gate commands, project notes, MCP integrations, terminal
-      command) — with AskUserQuestion or, when that tool is unavailable, in its message — instead of
+      briefly, and asks the user which parts to redo (gate commands, project notes, risk areas / related repos,
+      MCP integrations, terminal command) — with AskUserQuestion or, when that tool is unavailable, in its message — instead of
       re-detecting everything and overwriting the profile without asking.

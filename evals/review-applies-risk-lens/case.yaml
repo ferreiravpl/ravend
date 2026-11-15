@@ -1,6 +1,6 @@
 schema_version: "1.0"
 name: review-applies-risk-lens
-description: When the change touches a risk area (profile.risk → lens money), /ravend:review dispatches a second reviewer focused on that lens and reports the lens as covered; the money lens catches the float multiplication used for a discount.
+description: When the change touches a risk area (profile.risk → lens money), /ravend:review dispatches a second reviewer focused on that lens and reports the lens as covered; the money lens notes the float multiplication used for a discount.
 tags: [review, risk, headless]
 context:
   scaffold_script: scaffold.sh
@@ -25,8 +25,9 @@ graders:
     name: changes-requested
     pattern: '"verdict"\s*:\s*"CHANGES_REQUESTED"'
   - type: llm
-    name: money-finding
+    name: money-lens-applied
     criteria: >-
-      The final JSON (or the review it reports) has a P0/P1 finding on src/cart.js about money handling — e.g. the
-      discount computed with floating point (`gross * 0.9`) instead of integer cents arithmetic, or the rounding
-      rule — in addition to or besides the 10000-cent boundary bug. It is not a style nit.
+      The findings include the 10000-cent boundary bug on src/cart.js as P0 or P1, and also a money-handling
+      observation from the money lens — e.g. the discount computed with floating point (`gross * 0.9`) instead of
+      integer cents arithmetic, or the rounding rule — at any severity (P2 is fine when there is no concrete
+      failing amount). Findings are not padded with style nits.
