@@ -496,6 +496,8 @@ class Guards(RepoCase):
         self.assertFalse(self.pre("pre-command", "Bash", command='git commit -m "explica o terraform apply no CI"'))
         self.assertTrue(self.pre("pre-command", "mcp__aws-api__call_aws", cli_command="aws sqs purge-queue --queue-url q"))
         self.assertFalse(self.pre("pre-command", "mcp__aws-api__call_aws", cli_command="aws sqs get-queue-attributes --queue-url q"))
+        self.assertFalse(self.pre("pre-command", "mcp__github__create_pull_request", body="CI runs terraform apply after merge"))
+        self.assertTrue(self.pre("pre-command", "mcp__github__merge_pull_request", pull_number=3))
         res = self.hook("pre-command", tool_name="Bash", tool_input={"command": "terraform apply"})
         self.assertIn("deny", res.stdout)
         res = subprocess.run([sys.executable, str(SCRIPT), "hook", "pre-command"], cwd=self.repo, capture_output=True,

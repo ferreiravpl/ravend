@@ -25,7 +25,7 @@ The next step is decided by code, never by you: `ravend.py next` reads the spec,
 | `verify` | Invoke `ravend:verify <slug>`. |
 | `review` | Invoke `ravend:review <slug>`. |
 | `ship` | **Checkpoint**: ask the user before invoking `ravend:ship <slug>` — push and PR are visible to the team (also when it only pushes a fix to an open PR). |
-| `ci` | `$RV ci <slug> --wait 9` (the runtime reads the PR checks; keep it under the Bash timeout). Still pending → tell the user CI is running and to come back with `/ravend:continue`; stop. Otherwise loop. |
+| `ci` | `$RV ci <slug> --wait 9` with the Bash tool timeout at 600000 ms (the runtime reads the PR checks; never poll them yourself). Still pending → tell the user CI is running and to come back with `/ravend:continue`; stop. Otherwise loop. |
 | `merge` | Say CI is green and the merge is theirs (link `pr`). Stop. |
 | `human` | Stop. Summarize `message`, the `blocking` findings / `review` file and what was tried; hand over. |
 | `done` | Say so, with the PR link if present. Stop. |

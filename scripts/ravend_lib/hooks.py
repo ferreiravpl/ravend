@@ -196,6 +196,7 @@ INFRA_DENY = [
                 r"|repo\s+(?:delete|edit|archive|rename))\b"), "changes the GitHub repository/org"),
     (re.compile(r"\bdocker\s+push\b"), "publishes an image — CI publishes"),
 ]
+CLI_START = re.compile(r"^\s*(?:aws|terraform|tofu|terragrunt|helm|kubectl|gh|docker)\b")
 AWS_READ_EXCEPTIONS = {"update-kubeconfig", "start-query", "stop-query", "get-login-password"}
 MCP_DENY_TOOLS = re.compile(r"merge_pull_request|delete_repository|create_or_update_secret")
 
@@ -268,7 +269,9 @@ def hook_pre_command(inp: dict) -> int:
     else:
         if MCP_DENY_TOOLS.search(tool):
             return _deny(f"Ravend: `{tool}` is the developer's call (merge, secrets, repository deletion).")
-        texts, agent = _strings(ti), ""
+        # only arguments that are themselves CLI commands (e.g. an AWS MCP's `cli_command`), never free text
+        # such as a PR body that mentions `terraform apply`
+        texts, agent = [t for t in _strings(ti) if CLI_START.match(t)], ""
     for text in texts:
         why = command_denial(text, agent, extra)
         if why:
