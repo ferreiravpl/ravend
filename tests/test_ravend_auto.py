@@ -52,12 +52,33 @@ if stage == "spec" and out.get("tier") not in (None, "trivial"):
 if stage == "build" and slug:
     for task in ("T1", "T2"):
         subprocess.run(rv + ["task", "done", slug, task], capture_output=True)
+if stage == "ship":
+    subprocess.run("git add -A && git commit -qm leftovers; git push -q -u origin HEAD", shell=True, capture_output=True)
 if stage == "fix":
     touch = Path(os.getcwd()) / "src" / "fixes.js"
     touch.write_text(touch.read_text() + "// fix\n" if touch.exists() else "// fix\n")
     if os.environ.get("FAKE_FIX_FILE"):
         Path(os.getcwd(), os.environ["FAKE_FIX_FILE"]).write_text("export const sum = (a, b) => a + b;\n")
 print(json.dumps({"type": "result", "is_error": False, "total_cost_usd": 0.01, "structured_output": out}))
+'''
+
+FAKE_GH = r'''#!/usr/bin/env python3
+import json, os, subprocess, sys
+from pathlib import Path
+args = sys.argv[1:]
+if args[:2] == ["pr", "view"]:
+    queue = Path(os.environ["FAKE_GH_QUEUE"])
+    states = json.loads(queue.read_text()) if queue.exists() else ["pass"]
+    state = states.pop(0) if len(states) > 1 else states[0]
+    queue.write_text(json.dumps(states))
+    head = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    check = {"__typename": "CheckRun", "name": "ci", "status": "COMPLETED",
+             "conclusion": "SUCCESS" if state == "pass" else "FAILURE",
+             "detailsUrl": "https://github.com/o/r/actions/runs/1/job/2"}
+    print(json.dumps({"state": "OPEN", "headRefOid": head, "url": "u", "statusCheckRollup": [check]})); sys.exit(0)
+if args[:2] == ["run", "view"]:
+    print("ERROR: integration test failed"); sys.exit(0)
+sys.exit(1)
 '''
 
 
@@ -70,6 +91,9 @@ class RunnerCase(unittest.TestCase):
         fake = self.bin / "claude"
         fake.write_text(FAKE_CLAUDE)
         fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+        gh = self.bin / "gh"
+        gh.write_text(FAKE_GH)
+        gh.chmod(gh.stat().st_mode | stat.S_IEXEC)
         (self.repo / "src").mkdir(parents=True)
         (self.repo / "test").mkdir()
         (self.repo / "src" / "sum.js").write_text("export const sum = (a, b) => a + b;\n")
@@ -79,9 +103,11 @@ class RunnerCase(unittest.TestCase):
         (self.repo / "package.json").write_text('{"type":"module"}')
         subprocess.run("git init -q -b main && git -c user.email=t@t -c user.name=t add -A && "
                        "git -c user.email=t@t -c user.name=t commit -qm init", cwd=self.repo, shell=True, check=True)
+        subprocess.run(f"git init -q --bare {base / 'origin.git'} && git remote add origin {base / 'origin.git'} && "
+                       "git push -q origin main", cwd=self.repo, shell=True, check=True)
         self.env = {**os.environ, "PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}",
                     "RAVEND_HOME": str(base / "home"), "FAKE_SCRIPT": str(base / "script.json"),
-                    "FAKE_LOG": str(base / "calls.json"), "FAKE_RAVEND": str(Path(__file__).resolve().parent.parent / "scripts" / "ravend.py"),
+                    "FAKE_LOG": str(base / "calls.json"), "FAKE_GH_QUEUE": str(base / "gh.json"), "RAVEND_CI_INTERVAL": "0", "FAKE_RAVEND": str(Path(__file__).resolve().parent.parent / "scripts" / "ravend.py"),
                     "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
                     "GIT_COMMITTER_EMAIL": "t@t"}
         os.environ["RAVEND_HOME"] = self.env["RAVEND_HOME"]
@@ -121,11 +147,19 @@ class RunnerCase(unittest.TestCase):
         self.assertTrue(self.worktree().exists())
         self.assertEqual(ravend.next_action(self.worktree(), "s")["action"], "ship")
 
-    def test_pr_flag_ships_and_closes_the_spec(self):
+    def test_pr_flag_ships_and_follows_ci_until_green(self):
         res, calls = self.run_pipeline({**self.SPEC_SMALL, **self.OK}, "add thing", "--pr")
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
         self.assertEqual(calls[-1], "ship")
-        self.assertEqual(ravend.next_action(self.worktree(), "s")["action"], "done")
+        self.assertIn("CI verde", res.stdout)
+        self.assertEqual(ravend.next_action(self.worktree(), "s")["action"], "merge")
+
+    def test_red_ci_is_fixed_verified_reviewed_and_pushed_again(self):
+        Path(self.env["FAKE_GH_QUEUE"]).write_text(json.dumps(["fail", "pass"]))
+        res, calls = self.run_pipeline({**self.SPEC_SMALL, **self.OK}, "add thing", "--pr")
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertEqual(calls, ["spec", "build", "verify", "review", "ship", "fix", "verify", "review", "ship"])
+        self.assertEqual(ravend.next_action(self.worktree(), "s")["action"], "merge")
 
     def test_large_spec_pauses_then_resume_continues(self):
         big = {"spec": [{"slug": "big", "tier": "large", "blocking_questions": []}]}

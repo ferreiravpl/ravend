@@ -7,7 +7,9 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from .core import _frontmatter, _read, data_dir, git, load_json, load_profile, project_id, save_json, state_dir, tree_fingerprint
+from .core import (_frontmatter, _read, changed_files, data_dir, git, load_json, load_profile, project_id, save_json,
+                   state_dir, tree_fingerprint)
+from .gating import _matches
 from .mcp import integrations
 
 # --------------------------------------------------------------------------- specs & status
@@ -76,8 +78,8 @@ def _require_spec(d: Path, slug: str) -> Path:
 
 def spec_state(d: Path, slug: str) -> dict:
     st = load_json(d / "specs" / slug / "state.json", {}) or {}
-    st.setdefault("verify", [])
-    st.setdefault("reviews", [])
+    for key in ("verify", "reviews", "approvals", "ci"):
+        st.setdefault(key, [])
     return st
 
 
@@ -127,6 +129,51 @@ def set_spec_status(d: Path, slug: str, status_value: str, note: str = "") -> No
     path = _require_spec(d, slug)
     text = _set_frontmatter(path.read_text(encoding="utf-8"), "status", status_value)
     path.write_text(_append_log(text, note or f"status: {status_value}"), encoding="utf-8")
+
+
+def ship_spec(d: Path, slug: str, pr: str) -> None:
+    """The PR is open: from here `next` follows its CI until the merge."""
+    set_spec_status(d, slug, "shipped", f"PR aberto: {pr}")
+    path = spec_file(d, slug)
+    path.write_text(_set_frontmatter(path.read_text(encoding="utf-8"), "pr", pr), encoding="utf-8")
+
+
+def approve_spec(d: Path, slug: str, note: str = "aprovada") -> None:
+    """A human approval (`ravend spec approve`, or `ravend auto --no-pause/--resume`). Recorded in state.json
+    because a small spec is approved by the spec skill itself: only this record counts for risk areas."""
+    set_spec_status(d, slug, "approved", note)
+    st = spec_state(d, slug)
+    st["approvals"].append({"at": datetime.now().isoformat(timespec="seconds"), "note": note})
+    _save_spec_state(d, slug, st)
+
+
+# --------------------------------------------------------------------------- risk areas
+# profile.risk: [{"name": "pagamentos", "paths": ["**/payment/**"], "lenses": ["money", "concurrency"],
+#                 "approve": true}]. A spec whose tasks or branch diff touch those paths needs a human
+# approval and a review that covered the listed lenses, whatever its tier.
+
+TASK_FILES_RE = re.compile(r"files:\s*([^—\n]+)")
+
+
+def _risk_match(path: str, pattern: str) -> bool:
+    return _matches(path, pattern) or _matches("/" + path, pattern)
+
+
+def risk_hits(root: Path, text: str, profile: dict | None) -> list[dict]:
+    areas = [a for a in ((profile or {}).get("risk") or []) if isinstance(a, dict) and a.get("paths")]
+    if not areas:
+        return []
+    files = set(changed_files(root, "branch", profile))
+    for m in TASK_FILES_RE.finditer(text):
+        files.update(f.strip().strip("`") for f in m.group(1).split(",") if f.strip())
+    hits = []
+    for area in areas:
+        paths = [area["paths"]] if isinstance(area["paths"], str) else area["paths"]
+        touched = sorted(f for f in files if any(_risk_match(f, p) for p in paths))
+        if touched:
+            hits.append({"name": area.get("name", "risco"), "lenses": list(area.get("lenses") or []),
+                         "approve": area.get("approve", True) is not False, "files": touched[:5]})
+    return hits
 
 
 def record_verify(root: Path, slug: str, uncovered: list[str]) -> dict:
@@ -189,7 +236,8 @@ def record_review(root: Path, slug: str, raw: dict) -> dict:
     st = spec_state(d, slug)
     same_code = st["reviews"] and st["reviews"][-1].get("fingerprint") == tree
     n = st["reviews"][-1]["n"] if same_code else len(st["reviews"]) + 1
-    entry = {"n": n, "fingerprint": tree, "verdict": verdict, "blocking": blocking,
+    lenses = sorted({str(x).strip().lower() for x in (raw.get("lenses") or []) if str(x).strip()})
+    entry = {"n": n, "fingerprint": tree, "verdict": verdict, "blocking": blocking, "lenses": lenses,
              "p2": sum(1 for f in findings if f.get("severity") == "P2"),
              "at": datetime.now().isoformat(timespec="seconds"), "raw": raw}
     if same_code:
@@ -264,6 +312,16 @@ def next_action(root: Path, slug: str | None = None) -> dict:
             return out("answer", "A spec tem perguntas em aberto que mudam o resultado.", None, questions=questions)
         return out("approve", f"A spec ({fm.get('tier', '?')}) espera a sua aprovação antes do build.",
                    f"ravend spec approve {slug}")
+    st = spec_state(d, slug)
+    profile = load_profile(root) or {}
+    hits = risk_hits(root, text, profile)
+    lenses = sorted({lens.lower() for h in hits for lens in h["lenses"]})
+    if hits:
+        base.update(risk=hits, lenses=lenses)
+    if any(h["approve"] for h in hits) and not st["approvals"]:
+        names = ", ".join(h["name"] for h in hits)
+        return out("approve", f"A spec toca área de risco ({names}) e precisa da sua aprovação antes de seguir.",
+                   f"ravend spec approve {slug}")
     tasks = TASK_RE.findall(text)
     pending = [t for mark, t, _ in tasks if mark == " "]
     if pending:
@@ -272,7 +330,6 @@ def next_action(root: Path, slug: str | None = None) -> dict:
                             f"({len(tasks) - len(pending)}/{len(tasks)} prontas).",
                    f"/ravend:build {slug}", task=pending[0])
     tree = tree_fingerprint(root)
-    st = spec_state(d, slug)
     verifies, reviews = st["verify"], st["reviews"]
     last_v = verifies[-1] if verifies else None
     if not last_v or last_v.get("fingerprint") != tree:
@@ -288,7 +345,12 @@ def next_action(root: Path, slug: str | None = None) -> dict:
                    fix="verify", problem=problem)
     last_r = reviews[-1] if reviews else None
     if not last_r or last_r.get("fingerprint") != tree:
-        return out("review", "Verificada e verde; falta o review deste código.", f"/ravend:review {slug}")
+        return out("review", "Verificada e verde; falta o review deste código."
+                   + (f" Lentes de risco: {', '.join(lenses)}." if lenses else ""), f"/ravend:review {slug}")
+    missing = [lens for lens in lenses if lens not in (last_r.get("lenses") or [])]
+    if missing:
+        return out("review", f"O review deste código não cobriu as lentes de risco: {', '.join(missing)}.",
+                   f"/ravend:review {slug}")
     if last_r.get("verdict") != "APPROVED":
         rounds = _trailing(reviews, lambda e: e.get("verdict") != "APPROVED")
         prev = reviews[-2] if len(reviews) > 1 else None
@@ -303,8 +365,39 @@ def next_action(root: Path, slug: str | None = None) -> dict:
         return out("fix", f"Corrigir os {len(last_r.get('blocking', []))} problema(s) P0/P1 do review {last_r['n']} "
                           f"(rodada {rounds} de {max_rounds}).", f"/ravend:build {slug}",
                    fix="review", review=review_file, blocking=last_r.get("blocking", []))
+    if status_value == "shipped" and fm.get("pr"):
+        return _after_pr(root, slug, fm["pr"], st["ci"], max_rounds, out)
     return out("ship", "Pronta para PR: gate full verde, critérios cobertos e review aprovado neste código.",
                f"/ravend:ship {slug}")
+
+
+def _ci_ok(entry: dict) -> bool:
+    return entry.get("state") == "pass"
+
+
+def _after_pr(root: Path, slug: str, pr: str, records: list, max_rounds: int, out) -> dict:
+    """The PR is open: push what changed locally, then follow its CI checks (records written by `ravend ci`)."""
+    head = git(["rev-parse", "HEAD"], root)
+    upstream = git(["rev-parse", "--verify", "--quiet", "@{u}"], root)
+    last = records[-1] if records else None
+    dirty = tree_fingerprint(root) != git(["rev-parse", "HEAD^{tree}"], root)
+    if dirty or (upstream and upstream != head) or (not upstream and last and last.get("head") != head):
+        return out("ship", f"Há mudanças locais que ainda não estão no PR ({pr}): commitar e enviar.",
+                   f"/ravend:ship {slug}", pr=pr)
+    if not last or last.get("head") != head or last.get("state") == "pending":
+        why = "Aguardando o CI do PR." if last and last.get("head") == head else "Acompanhar o CI do PR."
+        return out("ci", f"{why} {pr}", f"ravend ci {slug} --wait", pr=pr)
+    if last.get("pr_state") == "MERGED":
+        return out("done", f"PR mergeado: {pr}", pr=pr)
+    if _ci_ok(last):
+        return out("merge", f"CI verde no PR. O merge é seu: {pr}", None, pr=pr)
+    fails = _trailing(records, lambda e: not _ci_ok(e) and e.get("state") != "pending")
+    problem = "CI vermelho: " + "; ".join(last.get("failed") or ["checks falharam"])
+    if fails > max_rounds:
+        return out("human", f"O CI continua vermelho depois de {max_rounds} rodadas de correção ({problem}).", None,
+                   pr=pr, logs=last.get("logs", []))
+    return out("fix", f"Corrigir: {problem} (rodada {fails} de {max_rounds}).", f"/ravend:build {slug}",
+               fix="ci", problem=problem, logs=last.get("logs", []), pr=pr)
 
 
 def print_next(info: dict) -> None:

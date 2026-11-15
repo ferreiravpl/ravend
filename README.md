@@ -6,10 +6,10 @@
 **Da demanda ao PR, com testes e quality gate que o Claude não consegue pular.**
 </div>
 
-Ravend é um plugin do [Claude Code](https://claude.com/claude-code). Você descreve o que quer (em texto, por uma issue do Jira ou do GitHub) e ele conduz o trabalho até o PR:
+Ravend é um plugin do [Claude Code](https://claude.com/claude-code). Você descreve o que quer (em texto ou por uma issue do Jira, GitHub ou Taiga) e ele conduz o trabalho até o PR com o CI verde:
 
 ```
-spec ──▶ build (teste primeiro) ──▶ verify ──▶ review ──▶ PR
+spec ──▶ build (teste primeiro) ──▶ verify ──▶ review ──▶ PR ──▶ CI verde
 ```
 
 No dia a dia você usa **três comandos**:
@@ -30,6 +30,7 @@ O resto (as etapas, o gate, o tamanho da demanda) você vê acontecer. Não prec
 - [Exemplos](#exemplos)
 - [Quando o Ravend te pergunta algo](#quando-o-ravend-te-pergunta-algo)
 - [Como ele decide o próximo passo](#como-ele-decide-o-próximo-passo)
+- [Áreas de risco e infraestrutura](#áreas-de-risco-e-infraestrutura)
 - [Usando os seus MCPs](#usando-os-seus-mcps)
 - [Todos os comandos](#todos-os-comandos)
 - [Quality gate](#quality-gate)
@@ -53,7 +54,8 @@ O resto (as etapas, o gate, o tamanho da demanda) você vê acontecer. Não prec
 /ravend:init
 ```
 O `init` pergunta antes de cada passo e:
-- lê o projeto (pom.xml, package.json, CI…) e descobre os comandos de build, teste e lint;
+- lê o projeto (pom.xml, package.json, Terraform, Helm, os workflows do CI…) e descobre os comandos de build, teste e lint;
+- pergunta quais partes do código são **áreas de risco** (pagamento, auth, migrations, infra…) e quais repositórios vizinhos ele pode consultar;
 - lista os **MCPs que você já tem** e pergunta quais usar em cada etapa (veja [Usando os seus MCPs](#usando-os-seus-mcps));
 - oferece instalar o comando `ravend` no terminal;
 - termina rodando o `doctor` e mostra o que ainda falta.
@@ -78,6 +80,7 @@ O que acontece:
 5. Faz um **review** com um agente que não viu a implementação.
 6. Se o review ou a verificação apontarem problemas, corrige e verifica de novo (no máximo 2 rodadas).
 7. **Pergunta se pode abrir o PR.**
+8. Acompanha o **CI do PR**. Se ficar vermelho, corrige e envia de novo. Quando fica verde, avisa: **o merge é seu**.
 
 ### `/ravend:continue`
 Retoma o trabalho de onde parou: depois de fechar a sessão, de um `/clear`, ou quando você não lembra em que etapa estava. O Ravend olha o estado da spec (tasks, último gate, última verificação, último review) e executa o próximo passo.
@@ -109,11 +112,12 @@ Spec, build test-first, verificação e review. Se for grande (vários módulos,
 ```
 Primeiro escreve um teste que reproduz o bug e confirma que ele falha. Só depois corrige.
 
-**A partir do Jira ou do GitHub**
+**A partir do tracker ou de uma história escrita**
 ```text
 /ravend:start PROJ-123
 /ravend:start #45
-/ravend:start https://github.com/minha-org/meu-repo/issues/45
+/ravend:start https://tree.taiga.io/project/minha-org/us/123
+/ravend:start docs/historias/filtro-por-categoria.md
 ```
 
 **Fechou a sessão no meio**
@@ -127,8 +131,8 @@ Ele mostra onde parou (por exemplo, "Implementar T3 (2/5 prontas)") e segue.
 | Momento | Por quê |
 |---|---|
 | **Dúvida de regra de negócio** | Se algo na demanda muda o resultado e não dá para deduzir do código, ele pergunta em vez de inventar. |
-| **Aprovar a spec** | Só em demandas grandes. Nas pequenas ele segue sozinho. |
-| **Abrir o PR** | Sempre. Push e PR são visíveis para o time. |
+| **Aprovar a spec** | Em demandas grandes e em qualquer demanda que toque uma área de risco. Nas outras ele segue sozinho. |
+| **Abrir o PR** | Sempre. Push e PR são visíveis para o time. O merge, ele nunca faz. |
 | **Quando não consegue avançar** | Depois de 2 rodadas de correção sem resolver, ou se o review apontar o mesmo problema de novo, ele para e te mostra o que tentou. |
 
 ## Como ele decide o próximo passo
@@ -137,14 +141,17 @@ Quem decide é código, não o modelo. O comando `ravend next` lê o que está g
 
 | Situação | Próximo passo |
 |---|---|
-| Spec grande ainda não aprovada | Pedir sua aprovação |
+| Spec grande, ou que toca área de risco, ainda não aprovada | Pedir sua aprovação |
 | Spec com pergunta em aberto | Perguntar a você |
 | Tem task pendente | Implementar a próxima task |
 | Tasks prontas, mas o código ainda não foi verificado (ou mudou desde a verificação) | Verificar |
 | Gate vermelho ou critério sem teste | Corrigir e verificar de novo |
-| Verificado, mas sem review deste código | Review |
+| Verificado, mas sem review deste código | Review (com as lentes da área de risco, se houver) |
 | Review com problema P0/P1 | Corrigir e verificar de novo |
 | Tudo verde e aprovado neste código | Abrir o PR (com sua autorização) |
+| PR aberto | Acompanhar o CI do PR |
+| CI vermelho | Corrigir, verificar, revisar e enviar de novo |
+| CI verde | Avisar que o merge é seu |
 
 "Este código" quer dizer exatamente o conteúdo atual dos arquivos: se qualquer coisa mudar depois de uma verificação ou review, ela deixa de valer e o passo é refeito.
 
@@ -158,6 +165,25 @@ O tamanho da demanda também é decidido no começo, na spec:
 | **bug** | "O total fica negativo quando…" | Escreve primeiro o teste que reproduz o bug. |
 
 Discordou? Force o tamanho com `/ravend:spec --tier large <demanda>` e depois `/ravend:continue`.
+
+## Áreas de risco e infraestrutura
+
+**Áreas de risco.** No `/ravend:init` você marca as partes do código em que um erro custa caro: pagamento, autenticação, dados pessoais, migrations, contratos entre serviços, infra. A partir daí, qualquer demanda que toque nelas, mesmo pequena:
+- para para você aprovar a spec;
+- ganha um segundo revisor, focado nos riscos daquela área: dinheiro, concorrência, segurança, privacidade, contrato, migration ou infra.
+
+**O Ravend nunca muda o mundo real.** Os hooks bloqueiam, em qualquer etapa:
+
+| Bloqueado | Por quê |
+|---|---|
+| `terraform apply/destroy/import`, `state rm/mv` | Infra só muda pelo PR e pelo CI. `plan`, `validate` e `test` são livres. |
+| `helm install/upgrade`, `kubectl apply/delete/scale…` | Deploy é do CI. `get`, `describe` e `logs` são livres. |
+| Chamadas AWS que criam, alteram ou apagam (CLI ou MCP) | `describe`, `list` e `get` são livres. |
+| `gh pr merge`, `gh secret set`, `gh workflow run`, `docker push` | Merge, segredos e publicação são seus ou do CI. |
+
+Para uma sessão em que você realmente precisa disso: `RAVEND_GUARD=off`. O guarda protege contra acidentes; ele não é uma sandbox.
+
+**Também é garantido por hook:** o revisor não edita nada, o verificador só escreve testes, e os repositórios relacionados (libs e contratos que este repo consome) são só leitura.
 
 ## Usando os seus MCPs
 
@@ -173,7 +199,7 @@ Ele só pergunta sobre papéis para os quais você tem algum MCP compatível. Pa
 
 | Papel | Para que o Ravend usa | Em quais etapas |
 |---|---|---|
-| `issues` | Ler o ticket (Jira, Linear, GitHub/GitLab issues) | spec |
+| `issues` | Ler o ticket (Jira, Linear, Taiga, GitHub/GitLab issues) | spec |
 | `git` | Ler issues, ver checks de CI e comentários, abrir o PR | spec, review, ship |
 | `context` | Busca semântica e navegação no código | spec, build, review |
 | `docs` | Documentação das bibliotecas na versão que o projeto usa | spec, build |
@@ -183,6 +209,7 @@ Ele só pergunta sobre papéis para os quais você tem algum MCP compatível. Pa
 | `api` | Chamar e testar a API | verify |
 | `database` | Consultar o schema e os dados reais (só leitura) | spec, build, verify |
 | `observability` | Erros, logs e métricas para investigar bugs (Sentry, Datadog) | spec, verify |
+| `cloud` | Consultar a conta de nuvem (AWS), só leitura | spec, build, verify |
 
 A escolha fica no seu `profile.json`, então cada dev do time pode usar MCPs diferentes no mesmo repositório. Para mudar, rode `/ravend:init` e escolha "integrações MCP". No terminal: `ravend mcp` lista todos os seus MCPs (sem mostrar tokens) e `ravend integrations` mostra os escolhidos.
 
@@ -200,10 +227,10 @@ Os três do dia a dia chamam as etapas abaixo na ordem certa. Você pode chamar 
 | `/ravend:build` | Implementa as tasks (teste primeiro, gate, commit). Se a verificação ou o review apontaram problemas, corrige; o Ravend sabe o que falhou. Para algo trivial, aceita a descrição sem spec. | `/ravend:build filtro-categoria` |
 | `/ravend:verify` | Roda a suíte completa, monta a matriz critério → teste e escreve os testes de API/E2E que faltam. Não mexe em código de produção. | `/ravend:verify filtro-categoria` |
 | `/ravend:review` | Review por um agente que não viu a implementação. Findings P0/P1/P2 com arquivo, linha e cenário de falha. | `/ravend:review filtro-categoria` |
-| `/ravend:ship` | Abre o PR. Recusa se o gate não estiver verde neste código ou se o review não estiver aprovado. Sempre pede confirmação. | `/ravend:ship filtro-categoria` |
+| `/ravend:ship` | Abre o PR (ou envia uma correção para o PR aberto). Recusa se o gate não estiver verde neste código ou se o review não estiver aprovado. Sempre pede confirmação. | `/ravend:ship filtro-categoria` |
 | `/ravend:remember` | Guarda uma lição específica do projeto, para não repetir o erro. Aparece no início de cada sessão. | `/ravend:remember Nunca usar LocalDateTime nos DTOs; o padrão é OffsetDateTime` |
 
-Carregadas automaticamente quando o assunto aparece (você não chama): `stack-spring`, `stack-quarkus`, `stack-angular`, `stack-react`, `api-tests` e `e2e-playwright`.
+Carregadas automaticamente quando o assunto aparece (você não chama): `stack-spring`, `stack-quarkus`, `stack-angular`, `stack-react`, `stack-terraform`, `stack-helm`, `stack-github-actions`, `api-tests`, `event-tests` e `e2e-playwright`.
 
 ## Quality gate
 
@@ -213,6 +240,8 @@ O gate é a lista de comandos que **o seu projeto já usa** para dizer se o cód
 |---|---|---|
 | **fast** | Compilação + testes ligados aos arquivos alterados + lint desses arquivos. Deve levar menos de 2 minutos. | Depois de cada task. Também quando o Claude tenta encerrar durante um build com o código mudado. |
 | **full** | O que o CI rodaria: build completo, todos os testes, lint, integração e E2E. | Na verificação e antes do PR. |
+
+O `ravend doctor` avisa quando o CI roda algo que o gate full não roda (por exemplo, o build native), para o vermelho não aparecer só no PR.
 
 Você normalmente não roda o gate na mão. Se quiser: `/ravend:verify <slug>` dentro do Claude Code, ou `ravend gate full` no terminal (`ravend gate full --dry-run` só mostra os comandos).
 
@@ -243,7 +272,7 @@ O próximo passo é decidido pelo mesmo `ravend next` do `/ravend:continue`, e o
 
 ```bash
 ravend auto "Adicionar filtro por categoria em GET /products"   # para quando estiver pronto para PR
-ravend auto PROJ-123 --pr                                        # vai até abrir o PR
+ravend auto PROJ-123 --pr                                        # abre o PR e acompanha o CI
 ravend auto "#45" --no-pause --pr                                # sem pausa para aprovar spec grande
 ravend auto --resume filtro-categoria --pr                       # continua uma spec que você aprovou
 ```
@@ -257,7 +286,7 @@ Se o gate precisar subir a aplicação, as execuções se revezam para não disp
 
 | Opção | Para que serve |
 |---|---|
-| `--pr` | Ir até abrir o PR. Sem ela, para quando estiver pronto para PR. |
+| `--pr` | Abrir o PR e acompanhar o CI (corrige se ficar vermelho). Sem ela, para quando estiver pronto para PR. |
 | `--no-pause` | Não parar para você aprovar uma spec grande. |
 | `--resume <slug>` | Continuar uma spec que já existe. |
 | `--budget-usd X` | Gasto máximo em dólares por chamada ao Claude. |
@@ -266,7 +295,7 @@ Se o gate precisar subir a aplicação, as execuções se revezam para não disp
 
 | Saída | Significado | O que fazer |
 |---|---|---|
-| `0` | Terminou, ou parou de propósito (spec para aprovar, pronto para PR). | Ler a última linha. |
+| `0` | Terminou, ou parou de propósito (spec para aprovar, pronto para PR, CI verde esperando o merge). | Ler a última linha. |
 | `1` | Erro inesperado. | Ver os logs. |
 | `2` | Falta configuração (sem `/ravend:init`, spec não existe, pasta ocupada). | Ler a mensagem; `ravend doctor` ajuda. |
 | `3` | Precisa de você (pergunta em aberto, correção que não converge, etapa bloqueada). | Abrir o Claude Code na pasta do worktree e rodar `/ravend:continue`. |
@@ -289,7 +318,8 @@ Isso cria `~/.local/bin/ravend`, que sempre aponta para a versão instalada do p
 | `ravend doctor` | Confere a configuração e diz o que falta. |
 | `ravend gate fast\|full [--dry-run]` | Roda o quality gate desta pasta. |
 | `ravend mcp` / `ravend integrations` | Seus MCPs / os escolhidos para cada papel. |
-| `ravend spec approve <slug>` | Aprova uma spec grande sem abrir o Claude Code (para depois usar `ravend auto --resume`). |
+| `ravend spec approve <slug>` | Aprova uma spec sem abrir o Claude Code (para depois usar `ravend auto --resume`). |
+| `ravend ci <slug> [--wait]` | Lê os checks do CI do PR da spec e diz o próximo passo. |
 
 `ravend help` lista também os comandos de registro de estado que as skills usam (`task done`, `verify record`, `review record`), que você raramente vai precisar.
 
@@ -308,7 +338,7 @@ Tudo fica na sua máquina, nunca no repositório. O que o time vê é o PR: o `/
 ├── profile.json     comandos do gate, formatters, como subir a app, arquivos protegidos, MCPs
 ├── project.md       notas curtas sobre o projeto, lidas no início de cada sessão
 ├── knowledge/       lições salvas com /ravend:remember
-├── specs/<slug>/    spec.md, verify.md, review-N.md, state.json (registros de verificação e review)
+├── specs/<slug>/    spec.md, verify.md, review-N.md, state.json (registros de aprovação, verificação, review e CI)
 ├── runs/            logs do gate e do ravend auto
 └── state/<pasta>/   último gate e sessão em build, um por clone/worktree
 ```
@@ -322,7 +352,8 @@ Inativos em repositórios sem `/ravend:init`.
 | Hook | O que faz |
 |---|---|
 | Início da sessão | Mostra o projeto, as notas, as lições, os MCPs escolhidos e as specs em andamento. |
-| Antes de editar | Bloqueia edição dos `protected_paths` (`.env`, chaves, código gerado…). |
+| Antes de editar | Bloqueia edição dos `protected_paths` (`.env`, chaves, código gerado…) e dos repositórios relacionados; mantém o revisor só leitura e o verificador só em testes. |
+| Antes de um comando | Bloqueia o que muda infra real, faz deploy, merge ou mexe em segredos (veja [Áreas de risco e infraestrutura](#áreas-de-risco-e-infraestrutura)). |
 | Depois de editar | Roda o formatter configurado no arquivo editado. |
 | Ao encerrar | Só durante um build: se o código mudou desde o último gate verde, roda o `gate fast` e não deixa o Claude encerrar com ele vermelho. Depois de 3 bloqueios seguidos, libera e pede sua intervenção. |
 
@@ -336,25 +367,28 @@ Inativos em repositórios sem `/ravend:init`.
 
 | Agente | Por que existe |
 |---|---|
-| `reviewer` (opus) | Review com contexto limpo, sem o viés de quem implementou. Só lê. |
-| `verifier` (sonnet) | Escreve testes de API/E2E que faltam e isola a exploração do navegador. |
+| `reviewer` (opus) | Review com contexto limpo, sem o viés de quem implementou. Só lê (garantido por hook). Em área de risco, um segundo reviewer olha só as lentes daquela área. |
+| `verifier` (sonnet) | Escreve testes de API/E2E que faltam e isola a exploração do navegador. Só edita testes (garantido por hook). |
 | `implementer` (sonnet) | Só para tasks independentes marcadas `[P]`, em paralelo, cada uma no seu worktree. |
 
 ### Integrações
 
-- **GitHub:** issues via `gh issue view`, PRs via `gh pr create`, ou pelo seu MCP de git.
+- **GitHub:** issues via `gh issue view`, PRs via `gh pr create`, CI via `gh pr view`, ou pelo seu MCP de git.
 - **Jira:** configure o MCP remoto da Atlassian no Claude Code e use `/ravend:start PROJ-123`. Sem ele, o Ravend pede para você colar o texto da issue.
+- **Taiga e outros trackers:** com um MCP do tracker escolhido no papel `issues`, use a URL da história em `/ravend:start`.
 - **Worktrees:** MCPs de escopo local ficam registrados no caminho da pasta principal; o `ravend auto` os repassa para o worktree.
 
 ### Custo de contexto
 
-Cerca de 2k tokens fixos por sessão (as descrições das skills). O conteúdo de cada skill só é carregado quando ela é usada, e o gate devolve só o trecho do erro. Confira com `claude --plugin-dir . plugin details ravend`.
+Cerca de 2,5k tokens fixos por sessão (as descrições das skills). O conteúdo de cada skill só é carregado quando ela é usada, e o gate devolve só o trecho do erro. Confira com `claude --plugin-dir . plugin details ravend`.
 
 ### Limitações conhecidas
 
 - A checagem ao encerrar roda o `gate fast` de forma síncrona. Mantenha o fast abaixo de 2 minutos.
 - O paralelismo com `implementer` só vale para tasks que mexem em arquivos diferentes.
 - Screenshots de referência do Playwright dependem do SO e do navegador. Gere-as no mesmo ambiente do CI.
+- O guarda de comandos reconhece os comandos comuns de Terraform, Helm, kubectl, AWS, gh e docker; ele evita acidentes, mas não é uma sandbox.
+- O acompanhamento do CI usa o `gh` (GitHub). Em outro provedor, registre o resultado com `ravend ci <slug> --state pass|fail`.
 - Windows nativo não é suportado; use WSL.
 
 ### Desenvolvendo o plugin
@@ -366,14 +400,14 @@ claude plugin validate . && claude plugin validate skills --strict && claude plu
 claude plugin eval . --scaffold --trust-plugin --allow-tools Bash Write Edit Agent --runs 1 --ablation none
 ```
 
-Os evals em [`evals/`](evals/) usam um repositório de exemplo e verificam o tamanho da spec (trivial e large), o build test-first com gate, o review que pega um bug de limite, o `continue` seguindo o `next`, o `ship` recusando quando a spec não está pronta e o `init` perguntando o que refazer.
+Os evals em [`evals/`](evals/) usam um repositório de exemplo e verificam o tamanho da spec (trivial e large), o build test-first com gate, o review que pega um bug de limite, o review com a lente de uma área de risco, o `continue` seguindo o `next`, o `ship` recusando quando a spec não está pronta e o `init` perguntando o que refazer.
 
 ```
 .claude-plugin/   plugin.json, marketplace.json
 skills/           start, continue, doctor, init, spec, build, verify, review, ship, remember,
-                  api-tests, e2e-playwright, stack-*
+                  api-tests, event-tests, e2e-playwright, stack-*
 agents/           reviewer, verifier, implementer
-hooks/hooks.json  SessionStart, PreToolUse, PostToolUse, Stop
+hooks/hooks.json  SessionStart, PreToolUse (edições e comandos), PostToolUse, Stop
 scripts/          ravend.py (entrada da CLI) · ravend_lib/ (runtime) · ravend_auto.py (ravend auto)
 tests/            testes do runtime e do ravend auto
 evals/            cenários de avaliação + repositório de exemplo
