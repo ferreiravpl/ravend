@@ -32,13 +32,23 @@ Location: `<data_dir>/profile.json` (local to the developer, never committed). R
     "context": ["serena"],
     "browser": ["playwright"]
   },
-  "flow": {"max_fix_rounds": 2},                    // fix rounds (verify and review, each) before `next` hands over to a human
+  "flow": {"max_fix_rounds": 2},                    // fix rounds (verify, review and CI, each) before `next` hands over to a human
+  "risk": [                                         // a spec touching these paths needs human approval + a review with these lenses
+    {"name": "pagamentos", "paths": ["**/payment/**"], "lenses": ["money", "concurrency"]},
+    {"name": "infra", "paths": ["*.tf", "chart/**", ".github/workflows/*"], "lenses": ["infra"]}
+  ],
+  "related_repos": [                                // read-only context (edits blocked); paths relative to this repo
+    {"name": "contracts", "path": "../contracts", "use": "event records and golden fixtures"}
+  ],
+  "ci": {"wait_minutes": 30},                       // how long `ravend ci --wait` / `ravend auto --pr` follow the PR checks
+  "test_paths": ["src/it/*"],                       // extra paths the verifier may write (defaults cover common test dirs)
+  "guard": {"deny": ["\\bflyway\\s+clean\\b"]},      // extra regexes for the command guard (RAVEND_GUARD=off disables it)
   "headless": {"allowed_tools": ["Bash(docker compose *)"]}   // extra Bash patterns `ravend auto` may use
 }
 ```
 
 ## Integrations
-Roles (`ravend.py integrations` prints them): `issues`, `git`, `context`, `docs`, `knowledge`, `design`, `browser`, `api`, `database`, `observability`. Each role is used only in its stages (e.g. `issues` → spec, `browser` → verify, `git` → spec/review/ship). The headless runner adds `mcp__<server>` to the allowed tools of exactly those stages. Unknown role names are allowed and apply to every stage.
+Roles (`ravend.py integrations` prints them): `issues`, `git`, `context`, `docs`, `knowledge`, `design`, `browser`, `api`, `database`, `observability`, `cloud`. Each role is used only in its stages (e.g. `issues` → spec, `browser` → verify, `git` → spec/review/ship). The headless runner adds `mcp__<server>` to the allowed tools of exactly those stages. Unknown role names are allowed and apply to every stage.
 
 ## Step fields
 | field | meaning |
@@ -127,6 +137,25 @@ Karma projects need a headless browser: `npx ng test --watch=false --browsers=Ch
 }
 ```
 Jest instead of Vitest: `npx jest --findRelatedTests {files}` (fast) / `npx jest` (full).
+
+### Terraform, Helm, GitHub Actions
+Gate steps in `ravend:stack-terraform`, `ravend:stack-helm` and `ravend:stack-github-actions` (`references/`). Never put `apply`, `helm upgrade` or anything that needs production credentials in the gate — the command guard blocks it and CI owns it.
+
+### Quarkus/Maven service with native image and layer rules
+```json
+"gate": {
+  "fast": [
+    {"name": "compile", "run": "./mvnw -q test-compile", "when": ["*.java", "pom.xml"]},
+    {"name": "unit", "run": "./mvnw -q surefire:test -Dtest={java_tests} -Dsurefire.failIfNoSpecifiedTests=false", "when": ["*.java"]}
+  ],
+  "full": [
+    {"name": "verify", "run": "./mvnw -q verify", "timeout": 1800},
+    {"name": "native", "run": "./mvnw -q verify -Dnative -Dquarkus.native.container-build=true", "timeout": 3600,
+     "when": ["*.java", "pom.xml", "src/main/resources/*"]}
+  ]
+}
+```
+`verify` runs unit, `@QuarkusTest` (Dev Services), contract and ArchUnit tests. Drop `native` if the team keeps it CI-only (say so in project notes).
 
 ### Optional depth steps (gate.full)
 - Diff coverage (Java): `./mvnw -q verify jacoco:report && diff-cover target/site/jacoco/jacoco.xml --compare-branch={base} --fail-under=80`

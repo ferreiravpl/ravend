@@ -18,7 +18,7 @@ from .diagnostics import doctor, print_doctor
 from .flow import (FlowError, _set_frontmatter, _verify_ok, approve_spec, mark_task_done, next_action, print_next,
                    record_review, record_verify, set_spec_status, ship_spec, spec_file, status)
 from .gating import _apps, _http_ok, app_start, app_stop, gate
-from .hooks import _hook_input, hook_post_edit, hook_pre_command, hook_pre_edit, hook_session_start, hook_stop
+from .hooks import _hook_input, hook_post_edit, hook_pre_command, hook_pre_edit, hook_session_start, hook_stop, related_repos
 from .mcp import ROLES, STAGES, integrations, mcp_servers
 
 CLI_SHIM = """#!/usr/bin/env python3
@@ -273,7 +273,9 @@ def main(argv: list[str]) -> int:
                           "has_profile": (d / "profile.json").exists(),
                           "base_branch": base_branch(root, load_profile(root)),
                           "plugin_root": str(PLUGIN_ROOT),
-                          "integrations": integrations(load_profile(root))}, indent=2, ensure_ascii=False))
+                          "integrations": integrations(load_profile(root)),
+                          "related_repos": related_repos(root, load_profile(root) or {}),
+                          "risk": (load_profile(root) or {}).get("risk") or []}, indent=2, ensure_ascii=False))
         return 0
     if args.cmd == "mcp":
         print(json.dumps(mcp_servers(root, probe=not args.no_probe), indent=2, ensure_ascii=False))

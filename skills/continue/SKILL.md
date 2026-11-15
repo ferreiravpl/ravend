@@ -20,11 +20,13 @@ The next step is decided by code, never by you: `ravend.py next` reads the spec,
 | `start` | No active spec: tell the user to run `/ravend:start <demanda>`. Stop. |
 | `choose` | Ask which spec (AskUserQuestion, options from `options`), then loop with that slug. |
 | `answer` | Ask the user the `questions` (AskUserQuestion, recommended option first). Write the answers into the spec (resolve `## Open questions`, adjust criteria/tasks). Then loop. |
-| `approve` | Show a 5-line summary of the spec + its path and ask for approval. Yes → `$RV spec approve <slug>`. Changes → edit the spec, ask again. |
+| `approve` | Show a 5-line summary of the spec + its path (and the `risk` areas, if listed) and ask for approval. Yes → `$RV spec approve <slug>`. Changes → edit the spec, ask again. |
 | `build`, `fix` | Invoke `ravend:build <slug>` (it reads `next` itself to know whether it is a task or a fix). |
 | `verify` | Invoke `ravend:verify <slug>`. |
 | `review` | Invoke `ravend:review <slug>`. |
-| `ship` | **Checkpoint**: ask the user before invoking `ravend:ship <slug>` — push and PR are visible to the team. |
+| `ship` | **Checkpoint**: ask the user before invoking `ravend:ship <slug>` — push and PR are visible to the team (also when it only pushes a fix to an open PR). |
+| `ci` | `$RV ci <slug> --wait 9` (the runtime reads the PR checks; keep it under the Bash timeout). Still pending → tell the user CI is running and to come back with `/ravend:continue`; stop. Otherwise loop. |
+| `merge` | Say CI is green and the merge is theirs (link `pr`). Stop. |
 | `human` | Stop. Summarize `message`, the `blocking` findings / `review` file and what was tried; hand over. |
 | `done` | Say so, with the PR link if present. Stop. |
 

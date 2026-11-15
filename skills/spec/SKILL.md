@@ -1,7 +1,7 @@
 ---
 name: spec
-description: "Transforma uma demanda (texto, PROJ-123, #45 ou URL) numa spec do tamanho certo, com critérios de aceite testáveis e tasks, sem implementar nada. Use para planejar antes de codar; o /ravend:start já começa por aqui."
-argument-hint: "<demanda | PROJ-123 | #45> [--tier trivial|small|large|bug]"
+description: "Transforma uma demanda (texto, PROJ-123, #45, URL do Jira/GitHub/Taiga ou arquivo de história) numa spec do tamanho certo, com critérios de aceite testáveis e tasks, sem implementar nada. Use para planejar antes de codar; o /ravend:start já começa por aqui."
+argument-hint: "<demanda | PROJ-123 | #45 | URL | arquivo.md> [--tier trivial|small|large|bug]"
 ---
 
 # Ravend · spec
@@ -17,8 +17,11 @@ The same output has `integrations`: MCP servers the developer chose per role. He
 
 ## 1. Intake
 - Jira key → read it with the `issues` integration (or any Atlassian MCP tools available); otherwise ask the user to paste it (headless: fail with a blocking question).
-- GitHub issue → the `git`/`issues` integration if chosen, else `gh issue view <n> --json title,body,labels,comments`.
+- GitHub issue (`#45` or URL) → the `git`/`issues` integration if chosen, else `gh issue view <n> --json title,body,labels,comments`.
+- Other tracker URL or ref (Taiga, Linear…) → the `issues` integration (e.g. resolve the ref, then read the user story/issue with its comments). A bare `#45` is GitHub unless the only `issues` integration is another tracker.
+- Path to a file (a story or epic written by a planning tool such as BMAD) → read it; its acceptance criteria are the starting point — keep their intent and ids, rewrite only to make them testable.
 - Free text → use as is.
+Related repositories (`related_repos` in the same output: shared libs, contracts) can be read to understand what already exists; never plan edits there — a needed change becomes `Depends on` + a blocking question.
 Then read only what is needed to understand the affected area: entry points, the module(s) touched, one or two similar existing features. Prefer the `context` integration for semantic search; otherwise use the `Explore` agent for broad searches so file dumps stay out of this context.
 
 ## 2. Classify the tier (decide, state it in one line, move on)
@@ -29,14 +32,14 @@ Then read only what is needed to understand the affected area: entry points, the
 | large | several modules or full stack, new API/DB contract, migration, security, or real ambiguity | full template incl. Design |
 | bug | defect report | Problem (observed vs expected + repro), AC = the regression test, Tasks |
 
-The user can force a tier (`--tier`). When unsure between two tiers, pick the larger only if a wrong guess would cost rework across modules.
+The user can force a tier (`--tier`). When unsure between two tiers, pick the larger only if a wrong guess would cost rework across modules. Risk (money, auth, privacy, contracts, migrations, infra) is not a tier question: the profile's risk areas make `next` ask for approval and extra review lenses by themselves — list each task's files accurately so they are detected.
 
 ## 3. Ambiguity
 List assumptions explicitly. If an open question changes the design or the acceptance criteria, it is **blocking**: interactive → ask (AskUserQuestion, ≤4 questions, with a recommended option); headless → put it under `## Open questions` and report it as blocking. Never invent business rules silently.
 
 ## 4. Write the spec
 Use [references/spec-template.md](references/spec-template.md). Rules:
-- Acceptance criteria are **Given/When/Then**, each tagged with the test level that will prove it: `[unit]`, `[api]`, `[e2e]`, `[visual]`. They become tests in /ravend:build — write them so a test can assert them.
+- Acceptance criteria are **Given/When/Then**, each tagged with the test level that will prove it: `[unit]`, `[api]`, `[contract]` (event/API contract between producer and consumer), `[async]` (messaging, jobs, retries, idempotency), `[migration]` (schema change safe with the previous app version), `[infra]` (IaC/CI: plan, policy, lint), `[e2e]`, `[visual]`. They become tests in /ravend:build — write them so a test can assert them.
 - Tasks are vertical and small (one commit each), each lists the files it touches and the ACs it proves. Mark `[P]` only when tasks touch disjoint files and have no dependency.
 - Design section only for `large`: what changes and why, contracts (endpoints/DTOs/schema), trade-offs. Do not restate the codebase.
 - Slug: kebab-case, ≤40 chars. Branch: `<profile.git.branch_prefix or feat/><slug>`.

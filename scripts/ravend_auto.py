@@ -56,6 +56,7 @@ REVIEW_SCHEMA = {
     "type": "object",
     "properties": {
         "verdict": {"enum": ["APPROVED", "CHANGES_REQUESTED"]}, "iteration": {"type": "integer"},
+        "lenses": {"type": "array", "items": {"type": "string"}},
         "findings": {"type": "array", "items": {"type": "object", "properties": {
             "severity": {"enum": ["P0", "P1", "P2"]}, "file": {"type": "string"}, "line": {"type": ["integer", "null"]},
             "title": {"type": "string"}}, "required": ["severity", "file", "title"]}},

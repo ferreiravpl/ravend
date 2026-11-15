@@ -17,10 +17,12 @@ created: <YYYY-MM-DD>
 - AC1 [api]: Given <state>, when <action>, then <observable result>.
 - AC2 [unit]: Given …, when …, then ….
 - AC3 [e2e]: Given …, when …, then ….
+<!-- levels: [unit] [api] [contract] [async] [migration] [infra] [e2e] [visual] -->
 
 ## Design            <!-- large only -->
 - Affected: <module/file list>
-- Contracts: <endpoint, DTO, event, DB schema/migration changes>
+- Contracts: <endpoint, DTO, event, DB schema/migration, infra resource changes>
+- Depends on: <related repo + what must exist there first, if any>
 - Decisions: <choice — reason — rejected alternative>
 
 ## Out of scope

@@ -64,3 +64,39 @@ class PriceCalculatorTest {
     }
 }
 ```
+
+## Layer rules (ArchUnit)
+```java
+@AnalyzeClasses(packages = "com.example.orders", importOptions = ImportOption.DoNotIncludeTests.class)
+class ArchitectureTest {
+    @ArchTest
+    static final ArchRule layers = layeredArchitecture().consideringAllDependencies()
+        .layer("Domain").definedBy("..domain..")
+        .layer("Application").definedBy("..application..")
+        .layer("Adapters").definedBy("..adapter..")
+        .whereLayer("Adapters").mayNotBeAccessedByAnyLayer()
+        .whereLayer("Application").mayOnlyBeAccessedByLayers("Adapters")
+        .whereLayer("Domain").mayOnlyBeAccessedByLayers("Application", "Adapters");
+
+    @ArchTest
+    static final ArchRule domainHasNoFramework = noClasses().that().resideInAPackage("..domain..")
+        .should().dependOnClassesThat().resideInAnyPackage("io.quarkus..", "jakarta..", "org.hibernate..");
+}
+```
+
+## Native integration test
+```java
+@QuarkusIntegrationTest                         // same tests as the @QuarkusTest subclass, against the native binary
+class OrderResourceIT extends OrderResourceTest {}
+```
+`./mvnw verify -Dnative` (or `-Pnative`) builds the image and runs `*IT` against it; with Mandrel in a container: `-Dquarkus.native.container-build=true`.
+
+## Injectable clock
+```java
+@ApplicationScoped
+class ClockProducer { @Produces @DefaultBean Clock clock() { return Clock.systemUTC(); } }
+
+@QuarkusTest
+@TestProfile(FixedClockProfile.class)           // or @InjectMock Clock / a mutable test clock bean
+class DeadlineJobTest { /* advance the clock, run the job, assert */ }
+```
