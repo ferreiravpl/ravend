@@ -274,6 +274,8 @@ def hook_pre_command(inp: dict) -> int:
         texts, agent = [t for t in _strings(ti) if CLI_START.match(t)], ""
     for text in texts:
         why = command_denial(text, agent, extra)
+        if why and why.startswith("the reviewer"):
+            return _deny(f"Ravend: {why}. Report what you would change as a finding instead.")
         if why:
             return _deny(f"Ravend guard: {why}. Ravend never changes real infrastructure, deploys, merges or "
                          "secrets; the change goes through the PR and CI. Ask the developer to run it if needed "
