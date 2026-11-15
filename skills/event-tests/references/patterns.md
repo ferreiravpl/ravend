@@ -31,8 +31,8 @@ class PaymentConfirmedConsumerTest {
         var msg = message(uuid(), "order-1");
         consumer.handle(msg);
         consumer.handle(msg);
-        assertThat(orders.find("order-1").status()).isEqualTo(MATCHING);
-        assertThat(outbox.eventsOfType("order.matching-started")).hasSize(1);
+        assertThat(orders.find("order-1").status()).isEqualTo(PAID);
+        assertThat(outbox.eventsOfType("order.paid")).hasSize(1);
     }
 
     @Test
@@ -47,11 +47,11 @@ class PaymentConfirmedConsumerTest {
 ## Async: two replicas at once
 ```java
 @Test
-void onlyOneReplicaAppliesTheTransition() throws Exception {   // AC4 [async]
+void onlyOneReplicaReservesTheLastItem() throws Exception {    // AC4 [async]
     var start = new CountDownLatch(1);
-    Callable<Boolean> accept = () -> { start.await(); return service.accept("order-1", driver()); };
+    Callable<Boolean> reserve = () -> { start.await(); return service.reserve("sku-1", customer()); };
     var pool = Executors.newFixedThreadPool(2);
-    var a = pool.submit(accept); var b = pool.submit(accept);
+    var a = pool.submit(reserve); var b = pool.submit(reserve);
     start.countDown();
     assertThat(List.of(a.get(), b.get())).containsExactlyInAnyOrder(true, false);
 }

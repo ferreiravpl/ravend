@@ -1,0 +1,32 @@
+schema_version: "1.0"
+name: review-applies-risk-lens
+description: When the change touches a risk area (profile.risk → lens money), /ravend:review dispatches a second reviewer focused on that lens and reports the lens as covered; the money lens catches the float multiplication used for a discount.
+tags: [review, risk, headless]
+context:
+  scaffold_script: scaffold.sh
+execution:
+  prompt: /ravend:review cart-coupon --headless
+  max_turns: 40
+  timeout_seconds: 900
+  allowed_tools: [Read, Glob, Grep, Skill, Bash, Write, Agent]
+  env:
+    EVAL_RAVEND_HOME: .ravend-home
+runs: 1
+graders:
+  - type: tool_used
+    name: two-reviewers
+    tool: Agent
+    input_match: "reviewer"
+    min: 2
+  - type: regex
+    name: money-lens-reported
+    pattern: '"lenses"\s*:\s*\[[^\]]*"money"'
+  - type: regex
+    name: changes-requested
+    pattern: '"verdict"\s*:\s*"CHANGES_REQUESTED"'
+  - type: llm
+    name: money-finding
+    criteria: >-
+      The final JSON (or the review it reports) has a P0/P1 finding on src/cart.js about money handling — e.g. the
+      discount computed with floating point (`gross * 0.9`) instead of integer cents arithmetic, or the rounding
+      rule — in addition to or besides the 10000-cent boundary bug. It is not a style nit.

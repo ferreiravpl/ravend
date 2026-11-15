@@ -315,8 +315,9 @@ def next_action(root: Path, slug: str | None = None) -> dict:
     st = spec_state(d, slug)
     profile = load_profile(root) or {}
     hits = risk_hits(root, text, profile)
+    lenses = sorted({lens.lower() for h in hits for lens in h["lenses"]})
     if hits:
-        base["risk"] = hits
+        base.update(risk=hits, lenses=lenses)
     if any(h["approve"] for h in hits) and not st["approvals"]:
         names = ", ".join(h["name"] for h in hits)
         return out("approve", f"A spec toca área de risco ({names}) e precisa da sua aprovação antes de seguir.",
@@ -342,16 +343,14 @@ def next_action(root: Path, slug: str | None = None) -> dict:
             return out("human", f"A verificação continua falhando depois de {max_rounds} rodadas de correção ({problem}).")
         return out("fix", f"Corrigir: {problem} (rodada {fails} de {max_rounds}).", f"/ravend:build {slug}",
                    fix="verify", problem=problem)
-    lenses = sorted({lens.lower() for h in hits for lens in h["lenses"]})
     last_r = reviews[-1] if reviews else None
     if not last_r or last_r.get("fingerprint") != tree:
         return out("review", "Verificada e verde; falta o review deste código."
-                   + (f" Lentes de risco: {', '.join(lenses)}." if lenses else ""), f"/ravend:review {slug}",
-                   lenses=lenses)
+                   + (f" Lentes de risco: {', '.join(lenses)}." if lenses else ""), f"/ravend:review {slug}")
     missing = [lens for lens in lenses if lens not in (last_r.get("lenses") or [])]
     if missing:
         return out("review", f"O review deste código não cobriu as lentes de risco: {', '.join(missing)}.",
-                   f"/ravend:review {slug}", lenses=lenses)
+                   f"/ravend:review {slug}")
     if last_r.get("verdict") != "APPROVED":
         rounds = _trailing(reviews, lambda e: e.get("verdict") != "APPROVED")
         prev = reviews[-2] if len(reviews) > 1 else None
