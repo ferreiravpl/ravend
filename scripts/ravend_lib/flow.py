@@ -253,19 +253,51 @@ def risk_hits(root: Path, text: str, profile: dict | None) -> list[dict]:
     return hits
 
 
+def spec_fingerprints(repos: list[dict]) -> dict:
+    return {r["project_id"]: tree_fingerprint(r["root"]) for r in repos}
+
+
+def record_fingerprints(entry: dict, origin_pid: str) -> dict:
+    """The code a record was made on, per repo. Records from before multi-repo specs carry a single
+    `fingerprint`: it belongs to the origin repo."""
+    if entry.get("fingerprints"):
+        return dict(entry["fingerprints"])
+    return {origin_pid: entry["fingerprint"]} if entry.get("fingerprint") else {}
+
+
+def _record_repos(root: Path, d: Path, slug: str) -> tuple[str, list[dict]]:
+    text = _read(_require_spec(d, slug))
+    repos, errors = spec_repos(root, text)
+    if is_multi(text):
+        if errors:
+            raise FlowError("; ".join(errors))
+        branch = _frontmatter(text).get("branch", "")
+        off = [r["name"] for r in repos if not r["on_branch"]]
+        if off:
+            raise FlowError(f"repo(s) fora da branch `{branch}` da spec: {', '.join(off)}. "
+                            f"Rode `git switch {branch}` neles e registre de novo.")
+    return text, repos
+
+
 def record_verify(root: Path, slug: str, uncovered: list[str]) -> dict:
     """Ties the verification to the code it was made on. The gate result comes from the runtime's own
     last `gate full` of this checkout, which must have run on exactly this tree."""
     d = data_dir(root)
-    _require_spec(d, slug)
-    tree = tree_fingerprint(root)
-    last = load_json(state_dir(root) / "last-gate-full.json")
-    if not last or not tree or last.get("fingerprint") != tree:
-        raise FlowError("o gate full não rodou neste código (ou o código mudou depois). Rode `gate full` e registre de novo.")
-    entry = {"fingerprint": tree, "gate": last.get("status"), "uncovered": [u for u in uncovered if u.strip()],
-             "at": datetime.now().isoformat(timespec="seconds")}
+    text, repos = _record_repos(root, d, slug)
+    fps, gates = {}, {}
+    for r in repos:
+        tree = tree_fingerprint(r["root"])
+        last = load_json(state_dir(r["root"]) / "last-gate-full.json")
+        if not last or not tree or last.get("fingerprint") != tree:
+            where = f" do repo `{r['name']}` ({r['abs']})" if is_multi(text) else ""
+            raise FlowError(f"o gate full não rodou neste código{where} (ou o código mudou depois). "
+                            "Rode `gate full` e registre de novo.")
+        fps[r["project_id"]], gates[r["project_id"]] = tree, last.get("status")
+    gate_value = next((g for g in gates.values() if g != "PASS"), "PASS")
+    entry = {"fingerprints": fps, "gates": gates, "gate": gate_value,
+             "uncovered": [u for u in uncovered if u.strip()], "at": datetime.now().isoformat(timespec="seconds")}
     st = spec_state(d, slug)
-    if st["verify"] and st["verify"][-1].get("fingerprint") == tree:
+    if st["verify"] and record_fingerprints(st["verify"][-1], repos[0]["project_id"]) == fps:
         st["verify"][-1] = entry  # same code verified again: replace, do not count it twice
     else:
         st["verify"].append(entry)
@@ -304,17 +336,17 @@ def record_review(root: Path, slug: str, raw: dict) -> dict:
     """Stores a review and writes review-N.md. The verdict is derived, not trusted: any P0/P1 means
     CHANGES_REQUESTED, whatever the reviewer wrote."""
     d = data_dir(root)
-    _require_spec(d, slug)
+    _, repos = _record_repos(root, d, slug)
     findings = [f for f in (raw.get("findings") or []) if isinstance(f, dict)]
     blocking = sorted({f"{f.get('file', '?')} — {f.get('title', '')}" for f in findings
                        if f.get("severity") in ("P0", "P1")})
     verdict = "CHANGES_REQUESTED" if blocking else "APPROVED"
-    tree = tree_fingerprint(root)
+    fps = spec_fingerprints(repos)
     st = spec_state(d, slug)
-    same_code = st["reviews"] and st["reviews"][-1].get("fingerprint") == tree
+    same_code = st["reviews"] and record_fingerprints(st["reviews"][-1], repos[0]["project_id"]) == fps
     n = st["reviews"][-1]["n"] if same_code else len(st["reviews"]) + 1
     lenses = sorted({str(x).strip().lower() for x in (raw.get("lenses") or []) if str(x).strip()})
-    entry = {"n": n, "fingerprint": tree, "verdict": verdict, "blocking": blocking, "lenses": lenses,
+    entry = {"n": n, "fingerprints": fps, "verdict": verdict, "blocking": blocking, "lenses": lenses,
              "p2": sum(1 for f in findings if f.get("severity") == "P2"),
              "at": datetime.now().isoformat(timespec="seconds"), "raw": raw}
     if same_code:
@@ -422,22 +454,25 @@ def next_action(root: Path, slug: str | None = None) -> dict:
                             + (f" no repo `{repo['name']}`" if multi else "")
                             + f" ({len(tasks) - len(pending)}/{len(tasks)} prontas).",
                    f"/ravend:build {slug}", **extra)
-    tree = tree_fingerprint(root)
+    current = spec_fingerprints(repos)
+    origin_pid = repos[0]["project_id"]
     verifies, reviews = st["verify"], st["reviews"]
     last_v = verifies[-1] if verifies else None
-    if not last_v or last_v.get("fingerprint") != tree:
+    if not last_v or record_fingerprints(last_v, origin_pid) != current:
         why = "Ainda não verificada." if not last_v else "O código mudou desde a última verificação."
         return out("verify", why + " Rodar o gate full e conferir critério × teste.", f"/ravend:verify {slug}")
     if not _verify_ok(last_v):
         fails = _trailing(verifies, lambda e: not _verify_ok(e))
-        problem = ("gate full vermelho" if last_v.get("gate") != "PASS"
+        red = [r["name"] for r in repos if (last_v.get("gates") or {}).get(r["project_id"], "PASS") != "PASS"]
+        problem = ("gate full vermelho" + (f" em {', '.join(red)}" if multi and red else "")
+                   if last_v.get("gate") != "PASS"
                    else "critérios sem teste: " + "; ".join(last_v.get("uncovered", [])))
         if fails > max_rounds:
             return out("human", f"A verificação continua falhando depois de {max_rounds} rodadas de correção ({problem}).")
         return out("fix", f"Corrigir: {problem} (rodada {fails} de {max_rounds}).", f"/ravend:build {slug}",
                    fix="verify", problem=problem)
     last_r = reviews[-1] if reviews else None
-    if not last_r or last_r.get("fingerprint") != tree:
+    if not last_r or record_fingerprints(last_r, origin_pid) != current:
         return out("review", "Verificada e verde; falta o review deste código."
                    + (f" Lentes de risco: {', '.join(lenses)}." if lenses else ""), f"/ravend:review {slug}")
     missing = [lens for lens in lenses if lens not in (last_r.get("lenses") or [])]

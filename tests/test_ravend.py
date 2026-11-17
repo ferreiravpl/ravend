@@ -354,6 +354,13 @@ class Flow(FlowBase):
                                  "second — files: src/sum.js — proves: AC1 — deps: none"))
         self.assertEqual(self.nxt()["task"], "T2")
 
+    def test_legacy_records_still_count_for_the_origin(self):
+        path = self.write_spec()
+        path.write_text(path.read_text().replace("- [ ]", "- [x]"))
+        ravend.save_json(self.data / "specs" / "s" / "state.json", {"verify": [
+            {"fingerprint": ravend.tree_fingerprint(self.repo), "gate": "PASS", "uncovered": []}]})
+        self.assertEqual(self.nxt()["action"], "review")
+
 
 class App(RepoCase):
     def test_app_running_from_another_checkout_blocks_a_second_start(self):
@@ -674,6 +681,52 @@ class MultiRepo(MultiRepoBase):
         self.assertEqual(info["repo_path"], str(self.lib.resolve()))
         self.assertIs(info["parallel"], False)
         self.assertEqual([r["name"] for r in info["repos"]], ["repo", "lib"])
+
+    def on_branch(self):
+        sh("git switch -qc feat/m", self.repo)
+        sh("git switch -qc feat/m", self.lib)
+
+    def tasks_done(self):
+        self.write_multi()
+        self.run_cli("spec", "approve", "m")
+        self.run_cli("task", "done", "m", "T1")
+        self.run_cli("task", "done", "m", "T2")
+
+    def gate_both(self):
+        self.run_cli("gate", "full")
+        self.cli_in(self.lib, "gate", "full")
+
+    def test_verify_needs_every_repo_gated_on_the_spec_branch(self):
+        self.tasks_done()
+        self.assertEqual(self.nxt()["action"], "verify")
+        res = self.run_cli("verify", "record", "m")
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("feat/m", res.stderr)
+        self.on_branch()
+        self.run_cli("gate", "full")
+        res = self.run_cli("verify", "record", "m")
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("lib", res.stderr)
+        self.cli_in(self.lib, "gate", "full")
+        self.assertEqual(self.run_cli("verify", "record", "m").returncode, 0)
+        self.assertEqual(self.nxt()["action"], "review")
+
+    def test_change_only_in_the_neighbour_invalidates_verify_and_review(self):
+        self.tasks_done()
+        self.on_branch()
+        self.gate_both()
+        self.run_cli("verify", "record", "m")
+        self.assertEqual(self.run_cli("review", "record", "m", stdin='{"findings": []}').returncode, 0)
+        self.assertNotIn(self.nxt()["action"], ("verify", "review"))
+        (self.lib / "src" / "lib.js").write_text("export const one = 2;\n")
+        self.assertEqual(self.nxt()["action"], "verify")
+
+    def test_neighbour_with_empty_gate_is_refused(self):
+        self.lib_profile({"gate": {"fast": [], "full": []}})
+        self.tasks_done()
+        self.on_branch()
+        self.gate_both()
+        self.assertEqual(self.run_cli("verify", "record", "m").returncode, 2)
 
 
 if __name__ == "__main__":

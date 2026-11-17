@@ -277,7 +277,8 @@ class Runner:
                 out = self.claude("review", f"/ravend:review {slug}{flags}", REVIEW_SCHEMA)
                 st = ravend.spec_state(self.data, slug)
                 last = st["reviews"][-1] if st["reviews"] else None
-                if not last or last.get("fingerprint") != ravend.tree_fingerprint(self.cwd):
+                pid = ravend.project_id(self.cwd)
+                if not last or ravend.record_fingerprints(last, pid).get(pid) != ravend.tree_fingerprint(self.cwd):
                     # the skill could not record it on this code: record it here, keeping the reviewer's full
                     # findings when the skill managed to store them during this stage
                     fresh = last and last.get("raw") and (len(st["reviews"]) > len(before) or last != (before or [None])[-1])
