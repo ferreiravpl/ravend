@@ -12,14 +12,14 @@ The next step is decided by code, never by you: `ravend.py next` reads the spec,
 
 ## Loop
 1. `$RV next $ARGUMENTS --json` (no argument → it picks the only active spec, or the one whose branch is checked out).
-2. Tell the user one line in their language: `▸ <action>: <message>`.
+2. Tell the user one line in pt-BR: `▸ <action>: <message>`.
 3. Do what the action says:
 
 | action | do |
 |---|---|
 | `start` | No active spec: tell the user to run `/ravend:start <demanda>`. Stop. |
 | `choose` | Ask which spec (AskUserQuestion, options from `options`), then loop with that slug. |
-| `answer` | Ask the user the `questions` (AskUserQuestion, recommended option first). Write the answers into the spec (resolve `## Open questions`, adjust criteria/tasks). Then loop. |
+| `answer` | Ask the user the `questions` in pt-BR (AskUserQuestion, recommended option first). Write the answers into the spec (resolve `## Open questions`, adjust criteria/tasks). Then loop. |
 | `approve` | Show a 5-line summary of the spec + its path (and the `risk` areas, if listed) and ask for approval. Yes → `$RV spec approve <slug>`. Changes → edit the spec, ask again. |
 | `build`, `fix` | Invoke `ravend:build <slug>` (it reads `next` itself to know whether it is a task or a fix). |
 | `verify` | Invoke `ravend:verify <slug>`. |

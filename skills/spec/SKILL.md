@@ -35,7 +35,7 @@ Then read only what is needed to understand the affected area: entry points, the
 The user can force a tier (`--tier`). When unsure between two tiers, pick the larger only if a wrong guess would cost rework across modules. Risk (money, auth, privacy, contracts, migrations, infra) is not a tier question: the profile's risk areas make `next` ask for approval and extra review lenses by themselves — list each task's files accurately so they are detected.
 
 ## 3. Ambiguity
-List assumptions explicitly. If an open question changes the design or the acceptance criteria, it is **blocking**: interactive → ask (AskUserQuestion, ≤4 questions, with a recommended option); headless → put it under `## Open questions` and report it as blocking. Never invent business rules silently.
+List assumptions explicitly. If an open question changes the design or the acceptance criteria, it is **blocking**: interactive → ask in pt-BR — question, header, options and descriptions, even when the story/code is in English (AskUserQuestion, ≤4 questions, with a recommended option); headless → put it under `## Open questions` and report it as blocking. Never invent business rules silently.
 
 ## 4. Write the spec
 Use [references/spec-template.md](references/spec-template.md). Rules:
@@ -46,7 +46,7 @@ Use [references/spec-template.md](references/spec-template.md). Rules:
 - If an existing project lesson in `<data_dir>/knowledge/` applies, reference it in the task.
 
 ## 5. Approval
-- Write the spec with `status: draft` for `large`; interactive → present a 5-line summary + path and ask for approval; on approval run `$RV spec approve <slug>` (do not edit the status by hand). Headless without `--approved` → leave it draft.
+- Write the spec with `status: draft` for `large`; interactive → present a 5-line summary in pt-BR + path and ask for approval; on approval run `$RV spec approve <slug>` (do not edit the status by hand). Headless without `--approved` → leave it draft.
 - `small`/`bug`: set `status: approved` unless there are blocking questions.
 - With `--approved`: set `status: approved`.
 

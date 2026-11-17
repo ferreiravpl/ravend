@@ -3,7 +3,7 @@
 This repo is a Claude Code plugin (and its own marketplace). User-facing docs: README.md (pt-BR) — always the current state; change history goes in release notes (GitHub Releases / PR bodies), never in the README.
 
 ## Layout
-- `skills/*/SKILL.md` — prompts. Bodies in English (token-efficient); `description` and `argument-hint` in pt-BR (shown in the `/` menu); user-facing output follows the user's language. Keep each SKILL.md short; put long material in `references/`.
+- `skills/*/SKILL.md` — prompts. Bodies in English (token-efficient); `description` and `argument-hint` in pt-BR (shown in the `/` menu); everything shown to the user (questions, options, summaries) is pt-BR — the SessionStart hook injects this rule; skills that ask say it too. Keep each SKILL.md short; put long material in `references/`.
 - `agents/*.md` — only reviewer, verifier, implementer. Add an agent only for context isolation or independence, never for "role play".
 - `hooks/hooks.json` → `scripts/ravend.py hook <event>`. Hooks must be no-ops in repos without a local profile and must never crash a session.
 - `scripts/ravend.py` — CLI entry point; the runtime lives in `scripts/ravend_lib/` (stdlib only, Python 3.8+), one module per responsibility: core, gating, mcp, detection, flow (state machine `next` + state records), diagnostics, hooks, cli. Modules import only modules listed before them (no cycles). `scripts/ravend_auto.py` — headless runner (`ravend auto`), driven by the same `next`.
