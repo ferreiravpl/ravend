@@ -13,6 +13,6 @@ You are the orchestrator; there is no separate orchestrator agent. The order of 
 2. **Trivial** (no spec written) → invoke `ravend:build` with the change description, then `python3 "$RAVEND_ROOT/scripts/ravend.py" gate full`. Green → ask the user before invoking `ravend:ship` (no slug: trivial change). Stop.
 3. **Everything else** → invoke `ravend:continue <slug>` and let it drive until a checkpoint (spec approval for large, PR authorization) or a stop.
 
-Tell the user in one line, in their language, what happens next at each handover. Everything needed to resume lives on disk, so after `/clear` or a new session the user only needs `/ravend:continue`.
+Talk to the user in pt-BR throughout (unless they write in another language), also in the stages you invoke. Tell them in one line what happens next at each handover. Everything needed to resume lives on disk, so after `/clear` or a new session the user only needs `/ravend:continue`.
 
 For unattended runs (CI, background), point the user to `ravend auto "<demanda>"` in the terminal.

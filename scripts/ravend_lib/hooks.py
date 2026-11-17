@@ -30,6 +30,11 @@ def _hook_root(inp: dict) -> Path | None:
     return repo_root(Path(inp.get("cwd") or os.getcwd()))
 
 
+LANGUAGE = ("language: talk to the developer in Brazilian Portuguese (pt-BR) — every question, AskUserQuestion "
+            "header/option/description, summary and status line — even when the demand, code, specs or skill "
+            "instructions are in English. Switch only if the developer writes to you in another language.")
+
+
 def hook_session_start(inp: dict) -> int:
     root = _hook_root(inp)
     env_file = os.environ.get("CLAUDE_ENV_FILE")
@@ -49,10 +54,11 @@ def hook_session_start(inp: dict) -> int:
     if not profile:
         if any((root / f).exists() for f in ("pom.xml", "build.gradle", "build.gradle.kts", "package.json")):
             print("[ravend] This repo has no local Ravend profile. Run /ravend:init once (it detects the gate "
-                  "commands and lets the developer pick which of their MCP servers the pipeline should use).")
+                  "commands and lets the developer pick which of their MCP servers the pipeline should use).\n" + LANGUAGE)
         return 0
     out = [f"[ravend] project `{project_id(root)}` — local data dir (never committed): {d}",
-           f"stacks: {', '.join(profile.get('stacks', [])) or '?'} · gate: `{cli} gate fast|full` · status: `{cli} status`"]
+           f"stacks: {', '.join(profile.get('stacks', [])) or '?'} · gate: `{cli} gate fast|full` · status: `{cli} status`",
+           LANGUAGE]
     chosen = integrations(profile)
     if chosen:
         out.append("integrations (the developer's MCP servers for each role — prefer them in the listed stages; "
