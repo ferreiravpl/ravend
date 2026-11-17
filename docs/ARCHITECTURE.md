@@ -134,36 +134,40 @@ flowchart TD
 
 Uma spec que toca uma **área de risco** (`profile.risk`) pede aprovação humana registrada antes do build, qualquer que seja o tier, e só passa do review quando ele cobriu as lentes daquela área.
 
+**Spec multi-repo.** Uma spec pode editar repos irmãos: `repos: ../contracts, ../consumer` no frontmatter (caminhos relativos ao *repo de origem*, o que guarda a spec) e `— repo: <pasta>` em cada task (ausente = origem). Os **repos participantes** são os que têm task. Cada repo precisa de profile próprio e é identificado nos registros pelo `project_id`. A spec sempre pede aprovação registrada pelo runtime, que grava o conjunto de repos aprovado; mudou o conjunto, volta para `approve`. Cada repo usa o próprio gate, profile, área de risco e branch base; a lente `contract` é exigida; no fim, em vez de `ship`, o `next` responde `handoff` (a abertura dos PRs entre repos está na [#10](https://github.com/ferreiravpl/ravend/issues/10)).
+
 O que `next_action` lê, nesta ordem:
 
 | Situação no disco | Ação |
 |---|---|
 | Nenhuma spec ativa / várias sem a da branch atual | `start` / `choose` |
 | `status: done` ou `abandoned` | `done` |
+| Spec multi-repo com repo inexistente, sem profile, com nome repetido, sem task, ou task com `repo:` fora de `repos:` | `answer` |
 | `status: draft` com `BLOCKING:` em *Open questions* | `answer` |
 | `status: draft` | `approve` |
+| Spec multi-repo sem aprovação, ou com repos diferentes dos da última aprovação | `approve` (com `repos`) |
 | Tasks ou diff tocam `profile.risk` e não há aprovação em `state.json → approvals` | `approve` (com `risk`) |
-| Task `- [ ] T<n>` pendente | `build` (com `task`) |
+| Task `- [ ] T<n>` pendente (a primeira com as `deps` prontas) | `build` (com `task`, `repo`, `repo_path`; multi-repo: `parallel: false`) |
 | Sem verificação registrada para a impressão digital atual | `verify` |
 | Última verificação deste código falhou | `fix` (`verify`) ou `human` após o limite |
 | Sem review registrado para este código, ou sem as lentes exigidas | `review` (com `lenses`) |
 | Último review com P0/P1 | `fix` (`review`), ou `human` se repetiu os mesmos P0/P1 ou passou do limite |
-| Tudo verde e aprovado neste código | `ship` |
+| Tudo verde e aprovado neste código | `ship` (multi-repo: `handoff`) |
 | `status: shipped`, árvore suja ou commits fora do PR | `ship` (só envia) |
 | `status: shipped`, sem CI registrado para o HEAD ou CI pendente | `ci` |
 | CI vermelho | `fix` (`ci`, com `logs`) ou `human` após o limite |
 | CI verde / PR mergeado | `merge` (humano) / `done` |
 
-**Impressão digital da árvore** (`tree_fingerprint` em `core.py`): copia o índice do git para um arquivo temporário, faz `git add -A` nele e `git write-tree`. É um hash do conteúdo de todos os arquivos, commitados ou não, sem tocar no índice real. Toda verificação e todo review são registrados com ela; se qualquer arquivo mudar, o registro deixa de valer e o passo é refeito.
+**Impressão digital da árvore** (`tree_fingerprint` em `core.py`): copia o índice do git para um arquivo temporário, faz `git add -A` nele e `git write-tree`. É um hash do conteúdo de todos os arquivos, commitados ou não, sem tocar no índice real. Toda verificação e todo review são registrados com ela, num mapa `{project_id: impressão digital}` com uma entrada por repo participante (registros antigos, com um `fingerprint` só, valem para o repo de origem); se qualquer arquivo de qualquer repo mudar, o registro deixa de valer e o passo é refeito.
 
 **Registros feitos pelo runtime, não à mão** (para o `next` nunca ler um arquivo reformatado pelo modelo):
 
 | Comando | Grava |
 |---|---|
 | `ravend task done <slug> T3` | marca a task em `spec.md`, loga e passa a spec para `in-progress` |
-| `ravend verify record <slug> [--uncovered …]` | `state.json → verify[]`, com o resultado do último `gate full` **desta pasta**; recusa se esse gate não rodou neste código |
-| `ravend review record <slug>` (JSON na entrada) | `state.json → reviews[]` e `review-N.md`; o veredito é derivado (qualquer P0/P1 = `CHANGES_REQUESTED`); recusa `--file` dentro do repositório |
-| `ravend spec approve <slug>` | status `approved` e uma entrada em `state.json → approvals` (a única aprovação que vale para área de risco) |
+| `ravend verify record <slug> [--uncovered …]` | `state.json → verify[]`, com o resultado do último `gate full` **de cada repo participante** (o desta pasta, numa spec de um repo); recusa se esse gate não rodou no código atual de algum deles ou se algum repo de uma spec multi-repo não está na branch da spec |
+| `ravend review record <slug>` (JSON na entrada) | `state.json → reviews[]` e `review-N.md`; o veredito é derivado (qualquer P0/P1 = `CHANGES_REQUESTED`); recusa `--file` dentro do repositório e, em spec multi-repo, repo fora da branch da spec |
+| `ravend spec approve <slug>` | status `approved` e uma entrada em `state.json → approvals` (a única aprovação que vale para área de risco e para spec multi-repo, com `repos`: os `project_id` aprovados) |
 | `ravend spec shipped <slug> --pr URL` | status `shipped` e o link do PR; daí em diante o `next` acompanha o CI |
 | `ravend ci <slug> [--wait N]` | `state.json → ci[]` por commit (`pass`/`fail`/`pending`, checks que falharam, trecho dos logs em `runs/ci-*`); com o PR mergeado, a spec vira `done`. Sem `gh`: `--state pass\|fail\|pending` |
 | `ravend spec done\|abandon <slug>` | fecha a spec à mão |
@@ -177,10 +181,10 @@ Os hooks rodam em toda sessão do Claude Code e saem sem fazer nada em repositó
 | Hook | Timeout | Faz | Por que é hook |
 |---|---|---|---|
 | `SessionStart` | 15 s | Injeta projeto, pasta de dados, stacks, MCPs escolhidos, notas, índice de lições e specs ativas (com a dica de `/ravend:continue`). Exporta `RAVEND_ROOT`, `RAVEND_DATA`, `RAVEND_SESSION_ID`. | O modelo sempre começa sabendo onde estão as coisas. |
-| `PreToolUse` (Edit/Write) | 10 s | Nega edição de `protected_paths` e de `related_repos`; nega qualquer edição do `reviewer` e edição fora de caminhos de teste do `verifier` (pelo `agent_type` do input). | Uma negação do harness não pode ser ignorada. Agents de plugin não aceitam `hooks:` no frontmatter, por isso o hook do plugin identifica o agente. |
+| `PreToolUse` (Edit/Write) | 10 s | Nega edição de `protected_paths` e de `related_repos`; nega qualquer edição do `reviewer` e edição fora de caminhos de teste do `verifier` (pelo `agent_type` do input). Com spec multi-repo ativa e aprovada, um arquivo num repo do conjunto aprovado usa o root e o profile **daquele** repo (liberado mesmo se for `related_repos`); um repo irmão com profile fora do conjunto é negado. | Uma negação do harness não pode ser ignorada. Agents de plugin não aceitam `hooks:` no frontmatter, por isso o hook do plugin identifica o agente. |
 | `PreToolUse` (Bash, MCPs de cloud/git) | 10 s | Nega comandos que mudam infra real, fazem deploy, merge, publicação ou mexem em segredos (`INFRA_DENY` + `profile.guard.deny`), ignorando texto entre aspas e heredocs; para o `reviewer`, também comandos que escrevem. `RAVEND_GUARD=off` desliga. | Evita o acidente "o agente consertou produção". É uma proteção, não uma sandbox. |
-| `PostToolUse` (Edit/Write) | 60 s | Roda o formatter do arquivo editado. | Formatação determinística, sem tokens. |
-| `Stop` | 1800 s | Só com build armado (`ravend arm`): se o código mudou desde o último gate fast verde, roda o gate e bloqueia o encerramento se falhar. Após 3 bloqueios, libera e pede um humano. | Impede o "pronto!" com teste quebrado. |
+| `PostToolUse` (Edit/Write) | 60 s | Roda o formatter do arquivo editado, com o profile do repo do arquivo (spec multi-repo). | Formatação determinística, sem tokens. |
+| `Stop` | 1800 s | Só com build armado (`ravend arm`): se o código mudou desde o último gate fast verde, roda o gate e bloqueia o encerramento se falhar. Numa spec multi-repo, o `arm` grava os repos aprovados em `armed.json → repos` e o hook roda o gate fast de cada um que mudou (repo sumido ou sem passos vira aviso, não bloqueio). Após 3 bloqueios, libera e pede um humano. | Impede o "pronto!" com teste quebrado. |
 
 ## Quality gate
 
@@ -207,6 +211,7 @@ Passos com `needs_app` sobem a aplicação (`profile.app`), esperam o healthchec
 - **Etapa que não muda o estado** (mesma ação e mensagem duas vezes) → para com saída 3, em vez de entrar em loop.
 - **Depois do PR** (`--pr`): o script acompanha o CI com `ci_check` (até `profile.ci.wait_minutes`, padrão 30), sem o modelo. Vermelho → rodada de `fix` (com os logs), verify, review e ship de novo; verde → sai com 0 esperando o merge.
 - **Repos relacionados:** passados com `--add-dir`; o hook mantém só leitura.
+- **Spec multi-repo:** recusada com saída 2 (precisaria de um worktree por repo); o caminho é o interativo.
 - **Skills da mesma versão do runtime:** se o checkout em execução não é o plugin instalado, passa `--plugin-dir` com ele.
 - **Permissões por etapa** (`--allowedTools`): ferramentas base, `ravend.py`, cada comando do gate/app (o texto fixo até o primeiro placeholder, mais argumentos: `npx eslint {files}` libera `npx eslint *`, nunca `npx *`), os MCPs escolhidos só nas etapas do papel, `mcp__playwright` no verify se não houver MCP de navegador, `gh` só no ship.
 - **MCPs de escopo local** ficam registrados pelo caminho da pasta principal; o runner os copia para um arquivo temporário (0600, apagado no fim) e passa com `--mcp-config`.
@@ -227,7 +232,7 @@ O Ravend não traz MCPs próprios: descobre os do dev (`ravend mcp`) e pergunta,
 ├── profile.json        gate, formatters, app, paths protegidos, integrations, flow, risk, related_repos, ci, guard
 ├── project.md          notas do projeto (≤ 40 linhas), injetadas no início da sessão
 ├── knowledge/          index.md + uma lição por arquivo (/ravend:remember)
-├── specs/<slug>/       spec.md · verify.md · review-N.md · state.json · evidence/
+├── specs/<slug>/       spec.md · verify.md · review-N.md · state.json (approvals[].repos, verify[]/reviews[].fingerprints) · evidence/
 ├── runs/               gate-<modo>-<data>-<pid>/ · auto-<data>-<pid>/ · ci-<data>-<pid>/ · app-*.log
 └── state/
     ├── app.lock        lock da aplicação, compartilhado entre pastas
@@ -246,7 +251,7 @@ Prós: vários devs no mesmo repo sem conflito nem lixo no git; cada um com seus
 | `gating.py` | Quality gate e ciclo de vida da app | `resolve_step`, `run_cmd`, `failure_excerpt`, `gate`, `app_start`, `app_owner`, `app_stop` |
 | `mcp.py` | MCPs do dev, papéis, permissões por etapa | `ROLES`, `mcp_servers`, `integrations`, `integration_tools`, `local_mcp_config` |
 | `detection.py` | Detecção de stacks (incl. Terraform, Helm), workflows de CI e repos irmãos para o `init` | `detect`, `ci_workflows`, `workflow_runs`, `sibling_repos` |
-| `flow.py` | Specs, máquina de estados, áreas de risco e registros | `next_action`, `risk_hits`, `approve_spec`, `ship_spec`, `mark_task_done`, `record_verify`, `record_review`, `set_spec_status`, `status` |
+| `flow.py` | Specs (incluindo multi-repo), máquina de estados, áreas de risco e registros | `next_action`, `spec_repos`, `task_meta`, `approved_repos`, `spec_fingerprints`, `risk_hits`, `approve_spec`, `ship_spec`, `mark_task_done`, `record_verify`, `record_review`, `set_spec_status`, `status` |
 | `ci.py` | CI do PR depois do ship (via `gh`) | `ci_check`, `classify`, `record_ci` |
 | `diagnostics.py` | `ravend doctor`, incluindo gate × CI | `doctor`, `print_doctor`, `ci_drift` |
 | `hooks.py` | Os hooks e o guarda de comandos | `hook_session_start`, `hook_pre_edit`, `hook_pre_command`, `command_denial`, `related_repos`, `hook_post_edit`, `hook_stop` |
@@ -270,6 +275,8 @@ Prós: vários devs no mesmo repo sem conflito nem lixo no git; cada um com seus
 | CI do PR acompanhado; vermelho vira rodada de correção | decisão em código; a leitura é `ravend ci` | código | `ci.ci_check` · `_after_pr` |
 | Infra real, deploy, merge e segredos nunca pelo agente | código (hook) | código (hook) | `hooks.hook_pre_command` |
 | Repos relacionados só leitura | código (hook) | código (hook) | `hooks.hook_pre_edit` |
+| Spec multi-repo: só os repos aprovados são editáveis; gate, profile e arquivos protegidos de cada um | código (hook + `next`) | recusada | `flow.approved_repos` · `hooks._edit_context` · `hooks.hook_stop` |
+| Spec multi-repo: verify e review valem só com todos os repos verdes no código atual | código | recusada | `flow.record_verify` · `flow.record_review` · `next_action` |
 | MCP só nas etapas do papel | prompt | código | skills · `allowed_tools` |
 | Teste antes do código (TDD) | prompt + eval | prompt + eval | skill `build` · eval `build-tdd-gate` |
 | Reviewer não altera código | código (hook nega edição e comandos que escrevem) | idem | `hooks.py` · `agents/reviewer.md` |
@@ -277,9 +284,9 @@ Prós: vários devs no mesmo repo sem conflito nem lixo no git; cada um com seus
 
 ## Testes e evals
 
-**Testes do runtime** (`tests/`, `unittest`, 50 testes, ~45 s). Criam repositórios git reais em pastas temporárias e rodam a CLI de verdade. O `ravend auto` é testado com um `claude` falso no PATH que imita os efeitos das skills (escreve a spec, marca tasks com `task done`, corrige arquivos), então o loop inteiro roda sem chamar a API.
+**Testes do runtime** (`tests/`, `unittest`, 69 testes, ~55 s). Criam repositórios git reais em pastas temporárias e rodam a CLI de verdade. O `ravend auto` é testado com um `claude` falso no PATH que imita os efeitos das skills (escreve a spec, marca tasks com `task done`, corrige arquivos), então o loop inteiro roda sem chamar a API.
 
-Cobrem: identidade, placeholders e gate; hooks; descoberta de MCP sem segredos; papéis por etapa; estado por worktree e locks; app disputada entre pastas; comando `ravend`; o ciclo completo da máquina de estados (aprovar, tasks, verify recusado sem gate, fix, review derivado, ship, done); escalação por finding repetido; escolha de spec pela branch; `doctor` e gate × CI; áreas de risco (aprovação e lentes); CI depois do PR com um `gh` falso (pendente, vermelho com log, correção enviada, verde, mergeado, registro manual); guarda de comandos e de edição por agente; repos relacionados; detecção de Terraform, Helm, workflows e repos irmãos; e o `ravend auto` (pronto para PR, `--pr` até o CI verde, CI vermelho corrigido, pausa e resume, trivial, rodada de review, finding repetido, gate refeito pelo script, limite de rodadas, permissões estreitas, lock de pasta, MCP local no worktree).
+Cobrem: identidade, placeholders e gate; hooks; descoberta de MCP sem segredos; papéis por etapa; estado por worktree e locks; app disputada entre pastas; comando `ravend`; o ciclo completo da máquina de estados (aprovar, tasks, verify recusado sem gate, fix, review derivado, ship, done); escalação por finding repetido; escolha de spec pela branch; `doctor` e gate × CI; áreas de risco (aprovação e lentes); CI depois do PR com um `gh` falso (pendente, vermelho com log, correção enviada, verde, mergeado, registro manual); guarda de comandos e de edição por agente; repos relacionados; spec multi-repo (repos e tasks, validação, ordem por `deps`, aprovação presa aos repos, registros por repo e migração dos antigos, risco por repo, `handoff`, hooks por repo, Stop em vários repos, recusa no `ravend auto`); detecção de Terraform, Helm, workflows e repos irmãos; e o `ravend auto` (pronto para PR, `--pr` até o CI verde, CI vermelho corrigido, pausa e resume, trivial, rodada de review, finding repetido, gate refeito pelo script, limite de rodadas, permissões estreitas, lock de pasta, MCP local no worktree).
 
 **Evals** (`evals/`, `claude plugin eval`). Medem o comportamento do modelo com as skills no repositório de exemplo "shop" (Node, sem dependências). No sandbox dos evals o Bash não grava arquivos, então os registros do runtime falham e as skills usam o plano B (gravar o arquivo com a ferramenta Write).
 
@@ -293,6 +300,7 @@ Cobrem: identidade, placeholders e gate; hooks; descoberta de MCP sem segredos; 
 | `continue-follows-next` | O `continue` pergunta ao `next` e segue para o build, sem pular etapas. |
 | `ship-refuses-unready` | O `ship` recusa (sem push, sem PR) quando o `next` não diz `ship`. |
 | `init-asks-what-to-redo` | Com perfil existente, o `init` resume o que existe e pergunta o que refazer. |
+| `spec-multi-repo` | Demanda que precisa mudar uma lib irmã (com profile) gera uma spec só, com `repos:` e a task da lib marcada `repo:` antes da que a usa. |
 
 ## Catálogo de arquivos
 
@@ -355,5 +363,8 @@ Cobrem: identidade, placeholders e gate; hooks; descoberta de MCP sem segredos; 
 | Slug | Nome curto da spec, usado como id. |
 | Tier | Tamanho da demanda: trivial, small, large, bug. |
 | Área de risco / lente | Caminhos do `profile.risk` que pedem aprovação humana e um review com checklists extras (money, concurrency, security, privacy, contract, migration, infra). |
+| Spec multi-repo | Spec com `repos:` que edita repos irmãos; tasks marcadas `repo:`. |
+| Repo de origem / participante | Origem: o repo que guarda a spec e de onde ela é conduzida. Participante: repo com ao menos uma task. |
+| Handoff | Fim de uma spec multi-repo nesta versão: tudo verde e aprovado, branches prontas, PRs abertos pelo dev. |
 | Guarda | Hook que nega comandos que mudam infra real, fazem deploy, merge ou mexem em segredos. |
 | Worktree | Outra pasta de trabalho do mesmo repositório, em outra branch. |
