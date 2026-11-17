@@ -13,7 +13,7 @@ Verification is evidence, not opinion: every acceptance criterion maps to a test
 ## 1. Full gate
 `RV="python3 $RAVEND_ROOT/scripts/ravend.py"` (fallback: this skill's base dir + `/../../scripts/ravend.py`).
 Integrations (`$RV project` → `integrations`, roles for `verify`): `browser`, `api`, `database`, `design`, `observability`.
-Run `$RV gate full`. It runs every `gate.full` step from the local profile against the branch diff, starts the app when a step needs it, and prints only failure excerpts plus log paths. Do not re-run the same commands by hand to "double-check" — trust the gate output.
+Run `$RV gate full` (multi-repo spec, `next` → `repos`: run it inside each `repos[].abs`, then record from this repo). It runs every `gate.full` step from the local profile against the branch diff, starts the app when a step needs it, and prints only failure excerpts plus log paths. Do not re-run the same commands by hand to "double-check" — trust the gate output.
 
 ## 2. Acceptance-criteria matrix
 Read `<data_dir>/specs/<slug>/spec.md`. For each AC find the test that proves it (search test names/descriptions for the behavior or an `AC<n>` tag; read the test to confirm it actually asserts the "then" clause). Classify:
@@ -31,8 +31,8 @@ Read `<data_dir>/specs/<slug>/spec.md`. For each AC find the test that proves it
 Diff coverage and mutation testing run as `gate.full` steps when configured (e.g. JaCoCo + diff-cover, PIT `-DtargetClasses`, Stryker `--mutate <changed files>`). Surviving mutants in changed lines → treat as weak tests.
 
 ## 5. Record
-- Write `<data_dir>/specs/<slug>/verify.md`: date, gate result (step → status), AC matrix (AC → test file::name → covered/weak/missing), evidence paths (screenshots/traces under `<data_dir>/specs/<slug>/evidence/`).
-- Then record it for the state machine: `$RV verify record <slug>` plus one `--uncovered "AC2: why"` per missing/weak criterion. The runtime takes the gate result from its own last `gate full` and refuses if that gate did not run on exactly this code — re-run the gate, then record. If the data dir is read-only (sandbox), say so in the output instead.
+- Write `<data_dir>/specs/<slug>/verify.md`: date, gate result (step → status), AC matrix (AC → test file::name, prefixed with the repo for a multi-repo spec → covered/weak/missing), evidence paths (screenshots/traces under `<data_dir>/specs/<slug>/evidence/`).
+- Then record it for the state machine (from this, the origin, repo): `$RV verify record <slug>` plus one `--uncovered "AC2: why"` per missing/weak criterion. The runtime takes the gate result from its own last `gate full` and refuses if that gate did not run on exactly this code — re-run the gate, then record. If the data dir is read-only (sandbox), say so in the output instead.
 
 ## Output
 Interactive: gate status, matrix summary, gaps closed/remaining, next step (`/ravend:continue`).

@@ -29,6 +29,7 @@ A lens is an extra checklist for a risk area (`profile.risk[].lenses`). `ravend 
 - API and event changes are additive; a breaking change gets a new version published in parallel.
 - Consumers ignore unknown fields; producers keep required fields.
 - Contract tests (golden fixtures / OpenAPI) updated on both producer and consumer sides.
+- Multi-repo spec: each repo can be deployed alone and in any order — consumers accept the old and the new shape, producers keep fields still read; versions/coordinates of the shared artifact consistent across repos.
 
 ## migration
 - Expand/contract: the previous app version still works against the new schema (no rename/drop in the same release).
