@@ -5,6 +5,7 @@ tier: small | large | bug
 status: draft | approved | in-progress | review | done | abandoned
 source: <PROJ-123 | https://github.com/org/repo/issues/45 | prompt>
 branch: feat/<slug>
+repos: <../other-repo, ...>   # only for a multi-repo spec; omit otherwise
 created: <YYYY-MM-DD>
 ---
 
@@ -38,6 +39,7 @@ created: <YYYY-MM-DD>
 - [ ] T1: <title> — files: <paths> — proves: AC1 — deps: none
 - [ ] T2: <title> — files: <paths> — proves: AC2, AC3 — deps: T1
 - [ ] T3: <title> — files: <paths> — proves: AC4 — deps: none [P]
+- [ ] T4: <title> — repo: <other-repo folder> — files: <paths in that repo> — proves: AC5 — deps: none   <!-- multi-repo only -->
 
 ## Log
 - <YYYY-MM-DD> spec created (tier <tier>)

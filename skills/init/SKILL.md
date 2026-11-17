@@ -37,7 +37,7 @@ Write `<data_dir>/project.md`, **≤40 lines**, only what is not obvious from th
 
 ## 6. Risk areas and related repositories (one AskUserQuestion call, 2 questions)
 - **Risk areas** (`profile.risk`): code where a mistake costs money, data, security or uptime. Propose from what exists, e.g. payment/billing/checkout → lenses `money`, `concurrency`; auth/identity/security → `security`, `privacy`; migrations (`**/db/migration/**`, `**/migrations/**`) → `migration`; event/API contracts (shared contract modules, OpenAPI files) → `contract`; message consumers/jobs → `concurrency`; `*.tf`, charts, `.github/workflows/*` → `infra`. multiSelect, recommended first, each option = name + globs. Save `[{"name", "paths": [globs], "lenses": [...]}]`. Effect (explain in one line): a spec touching them needs your approval and a review with those lenses, whatever its size. Lens catalog: `skills/review/references/lenses.md`.
-- **Related repositories** (`profile.related_repos`): siblings this repo consumes — shared libraries, contracts, the chart/infra it deploys with. multiSelect over `siblings`. Save `[{"name", "path": "../<dir>", "use": "<what for>"}]`. They become read-only context for spec/build/review; edits there are blocked.
+- **Related repositories** (`profile.related_repos`): siblings this repo consumes — shared libraries, contracts, the chart/infra it deploys with. multiSelect over `siblings`. Save `[{"name", "path": "../<dir>", "use": "<what for>"}]`. They become read-only context for spec/build/review; edits there are blocked unless an approved multi-repo spec lists them in `repos:`.
 Skip a question when nothing fits.
 
 ## 7. Integrations — the developer's own MCP servers

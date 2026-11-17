@@ -170,6 +170,17 @@ class RunnerCase(unittest.TestCase):
         self.assertEqual(res.returncode, 0, res.stdout)
         self.assertEqual(calls[1:], ["build", "verify", "review"])
 
+    def test_multi_repo_spec_is_refused(self):
+        spec = ravend.spec_file(self.data, "m")
+        spec.parent.mkdir(parents=True)
+        spec.write_text("---\nslug: m\ntitle: T\ntier: small\nstatus: approved\nbranch: feat/m\nrepos: ../x\n---\n"
+                        "## Tasks\n- [ ] T1: a — repo: x — files: a.js — deps: none\n")
+        res, calls = self.run_pipeline(self.OK, "--resume", "m")
+        self.assertEqual(res.returncode, 2, res.stdout + res.stderr)
+        self.assertIn("multi-repo", res.stdout + res.stderr)
+        self.assertIn("/ravend:continue", res.stdout + res.stderr)
+        self.assertFalse(self.worktree("m").exists())
+
     def test_blocking_questions_need_a_human(self):
         res, _ = self.run_pipeline({"spec": [{"slug": "q", "tier": "small", "blocking_questions": ["auth?"]}]}, "x")
         self.assertEqual(res.returncode, 3)

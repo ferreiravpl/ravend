@@ -13,10 +13,10 @@ from pathlib import Path
 
 from .core import PLUGIN_ROOT, base_branch, data_dir, ensure_dirs, git, load_profile, project_id, repo_root, save_json, state_dir
 from .ci import DEFAULT_WAIT_MINUTES, ci_check, print_ci, record_ci
-from .detection import detect
+from .detection import detect, sibling_repos
 from .diagnostics import doctor, print_doctor
-from .flow import (FlowError, _set_frontmatter, _verify_ok, approve_spec, mark_task_done, next_action, print_next,
-                   record_review, record_verify, set_spec_status, ship_spec, spec_file, status)
+from .flow import (FlowError, _set_frontmatter, _verify_ok, approve_spec, approved_repos, mark_task_done, next_action,
+                   print_next, record_review, record_verify, set_spec_status, ship_spec, spec_file, status)
 from .gating import _apps, _http_ok, app_start, app_stop, gate
 from .hooks import _hook_input, hook_post_edit, hook_pre_command, hook_pre_edit, hook_session_start, hook_stop, related_repos
 from .mcp import ROLES, STAGES, integrations, mcp_servers
@@ -178,7 +178,7 @@ def _record(args: argparse.Namespace, root: Path) -> int:
                 raise FlowError("informe o link do PR: ravend spec shipped <slug> --pr <url>")
             note = status_value + (f" — PR {args.pr}" if args.pr else "")
             if args.action == "approve":
-                approve_spec(d, args.slug, note)
+                approve_spec(d, args.slug, note, root=root)
             elif args.action == "shipped":
                 ship_spec(d, args.slug, args.pr)
             else:
@@ -236,8 +236,12 @@ def _arm(disarm: bool, root: Path) -> int:
             (st / "armed.json").unlink(missing_ok=True)
             print("[ravend] Stop-hook gate disarmed")
         else:
-            save_json(st / "armed.json", {"session": os.environ.get("RAVEND_SESSION_ID") or "*",
-                                          "at": datetime.now().isoformat(timespec="seconds")})
+            armed = {"session": os.environ.get("RAVEND_SESSION_ID") or "*",
+                     "at": datetime.now().isoformat(timespec="seconds")}
+            repos = approved_repos(root)
+            if repos:
+                armed["repos"] = [r["abs"] for r in repos]  # the Stop hook gates each of them
+            save_json(st / "armed.json", armed)
             save_json(st / "stop-blocks.json", {"count": 0})
             print("[ravend] Stop-hook gate armed for this session")
     except OSError as exc:
@@ -275,7 +279,8 @@ def main(argv: list[str]) -> int:
                           "plugin_root": str(PLUGIN_ROOT),
                           "integrations": integrations(load_profile(root)),
                           "related_repos": related_repos(root, load_profile(root) or {}),
-                          "risk": (load_profile(root) or {}).get("risk") or []}, indent=2, ensure_ascii=False))
+                          "risk": (load_profile(root) or {}).get("risk") or [],
+                          "siblings": sibling_repos(root)}, indent=2, ensure_ascii=False))
         return 0
     if args.cmd == "mcp":
         print(json.dumps(mcp_servers(root, probe=not args.no_probe), indent=2, ensure_ascii=False))

@@ -1,6 +1,7 @@
 """Unit tests for scripts/ravend.py (stdlib unittest). Run: python3 -m unittest discover -s tests"""
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -346,6 +347,21 @@ class Flow(FlowBase):
         sh("git switch -q -c feat/other", self.repo)
         self.assertEqual(ravend.next_action(self.repo)["slug"], "other")
 
+    def test_next_task_respects_deps(self):
+        path = self.write_spec()
+        path.write_text(path.read_text().replace("first — files: src/sum.js — proves: AC1 — deps: none",
+                                                 "first — files: src/sum.js — proves: AC1 — deps: T2")
+                        .replace("second — files: src/sum.js — proves: AC1 — deps: T1",
+                                 "second — files: src/sum.js — proves: AC1 — deps: none"))
+        self.assertEqual(self.nxt()["task"], "T2")
+
+    def test_legacy_records_still_count_for_the_origin(self):
+        path = self.write_spec()
+        path.write_text(path.read_text().replace("- [ ]", "- [x]"))
+        ravend.save_json(self.data / "specs" / "s" / "state.json", {"verify": [
+            {"fingerprint": ravend.tree_fingerprint(self.repo), "gate": "PASS", "uncovered": []}]})
+        self.assertEqual(self.nxt()["action"], "review")
+
 
 class App(RepoCase):
     def test_app_running_from_another_checkout_blocks_a_second_start(self):
@@ -572,6 +588,281 @@ jobs:
         self.assertEqual(drift, ["`mvn package [native]` (.github/workflows/ci.yml)",
                                  "`terraform fmt` (.github/workflows/ci.yml)"])
         self.assertIn("gate × CI", self.run_cli("doctor", "--no-probe").stdout)
+
+
+MULTI_SPEC = """---
+slug: m
+title: multi
+tier: small
+status: approved
+branch: feat/m
+repos: {repos}
+---
+## Acceptance criteria
+- AC1 [unit]: Given a, when b, then c.
+## Tasks
+- [ ] T1: lib change — repo: lib — files: src/lib.js — proves: AC1 — deps: none
+- [ ] T2: use it — files: src/sum.js — proves: AC1 — deps: T1
+"""
+
+
+def make_repo(path: Path, branch="main"):
+    (path / "src").mkdir(parents=True)
+    (path / "src" / "lib.js").write_text("export const one = 1;\n")
+    (path / "package.json").write_text('{"name":"lib","type":"module"}')
+    sh(f"git init -q -b {branch} && git -c user.email=t@t -c user.name=t add -A && "
+       "git -c user.email=t@t -c user.name=t commit -qm init", path)
+
+
+class MultiRepoBase(FlowBase):
+    def setUp(self):
+        super().setUp()
+        self.lib = Path(self.tmp.name) / "lib"
+        make_repo(self.lib)
+        self.lib_data = ravend.data_dir(self.lib)
+        self.lib_profile({})
+
+    def lib_profile(self, extra, repo=None):
+        profile = {"version": 1, "protected_paths": ["secret.txt"],
+                   "gate": {"fast": [{"name": "t", "run": "true"}], "full": [{"name": "t", "run": "true"}]}}
+        profile.update(extra)
+        ravend.save_json(ravend.data_dir(repo or self.lib) / "profile.json", profile)
+
+    def write_multi(self, repos="../lib", body=None):
+        path = ravend.spec_file(self.data, "m")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body or MULTI_SPEC.format(repos=repos))
+        return path
+
+    def nxt(self):
+        return ravend.next_action(self.repo, "m")
+
+    def cli_in(self, cwd, *args, stdin=None):
+        return subprocess.run([sys.executable, str(SCRIPT), *args], cwd=cwd, input=stdin, capture_output=True,
+                              text=True, env=os.environ.copy())
+
+
+class MultiRepo(MultiRepoBase):
+    def test_repos_and_task_meta_are_parsed(self):
+        text = MULTI_SPEC.format(repos="../lib, ../x")
+        self.assertEqual(ravend.spec_repo_paths(text), ["../lib", "../x"])
+        self.assertTrue(ravend.is_multi(text))
+        self.assertFalse(ravend.is_multi(SPEC.format(tier="small", status="approved")))
+        meta = ravend.task_meta(text)
+        self.assertEqual(meta[0], {"id": "T1", "done": False, "title": "lib change", "repo": "lib", "deps": []})
+        self.assertEqual((meta[1]["repo"], meta[1]["deps"]), (None, ["T1"]))
+
+    def test_participants_resolve_by_project_id_and_dedupe(self):
+        text = self.write_multi("../lib, ../lib/, " + str(self.lib)).read_text()
+        repos, errors = ravend.spec_repos(self.repo, text)
+        self.assertEqual(errors, [])
+        self.assertEqual([r["project_id"] for r in repos], [ravend.project_id(self.repo), ravend.project_id(self.lib)])
+        self.assertEqual([r["name"] for r in repos], ["repo", "lib"])
+        self.assertTrue(repos[0]["origin"])
+
+    def test_invalid_repos_become_blocking_questions(self):
+        self.write_multi("../lib, ../nope")
+        info = self.nxt()
+        self.assertEqual(info["action"], "answer")
+        self.assertTrue(any("../nope" in q for q in info["questions"]))
+        self.write_multi()
+        (self.lib_data / "profile.json").unlink()
+        info = self.nxt()
+        self.assertEqual(info["action"], "answer")
+        self.assertTrue(any("lib" in q and "init" in q for q in info["questions"]))
+        self.lib_profile({})
+        self.write_multi(body=MULTI_SPEC.format(repos="../lib") + "- [ ] T3: x — repo: other — files: a — deps: none\n")
+        self.assertTrue(any("other" in q for q in self.nxt()["questions"]))
+
+    def test_build_points_to_the_task_repo_and_disables_parallel(self):
+        self.write_multi()
+        self.run_cli("spec", "approve", "m")
+        info = self.nxt()
+        self.assertEqual((info["action"], info["task"], info["repo"]), ("build", "T1", "lib"))
+        self.assertEqual(info["repo_path"], str(self.lib.resolve()))
+        self.assertIs(info["parallel"], False)
+        self.assertEqual([r["name"] for r in info["repos"]], ["repo", "lib"])
+
+    def on_branch(self):
+        sh("git switch -qc feat/m", self.repo)
+        sh("git switch -qc feat/m", self.lib)
+
+    def tasks_done(self):
+        self.write_multi()
+        self.run_cli("spec", "approve", "m")
+        self.run_cli("task", "done", "m", "T1")
+        self.run_cli("task", "done", "m", "T2")
+
+    def gate_both(self):
+        self.run_cli("gate", "full")
+        self.cli_in(self.lib, "gate", "full")
+
+    def test_verify_needs_every_repo_gated_on_the_spec_branch(self):
+        self.tasks_done()
+        self.assertEqual(self.nxt()["action"], "verify")
+        res = self.run_cli("verify", "record", "m")
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("feat/m", res.stderr)
+        self.on_branch()
+        self.run_cli("gate", "full")
+        res = self.run_cli("verify", "record", "m")
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("lib", res.stderr)
+        self.cli_in(self.lib, "gate", "full")
+        self.assertEqual(self.run_cli("verify", "record", "m").returncode, 0)
+        self.assertEqual(self.nxt()["action"], "review")
+
+    def test_change_only_in_the_neighbour_invalidates_verify_and_review(self):
+        self.tasks_done()
+        self.on_branch()
+        self.gate_both()
+        self.run_cli("verify", "record", "m")
+        review = '{"findings": [], "lenses": ["contract"]}'
+        self.assertEqual(self.run_cli("review", "record", "m", stdin=review).returncode, 0)
+        self.assertNotIn(self.nxt()["action"], ("verify", "review"))
+        (self.lib / "src" / "lib.js").write_text("export const one = 2;\n")
+        self.assertEqual(self.nxt()["action"], "verify")
+
+    def test_project_lists_siblings_with_profile(self):
+        siblings = json.loads(self.run_cli("project").stdout)["siblings"]
+        lib = next(s for s in siblings if s["name"] == "lib")
+        self.assertTrue(lib["has_profile"])
+
+    def test_multi_repo_spec_always_needs_runtime_approval_bound_to_its_repos(self):
+        self.write_multi()
+        self.assertEqual(self.nxt()["action"], "approve")
+        self.run_cli("spec", "approve", "m")
+        self.assertEqual(self.nxt()["action"], "build")
+        lib2 = Path(self.tmp.name) / "lib2"
+        make_repo(lib2)
+        self.lib_profile({}, repo=lib2)
+        self.write_multi(body=MULTI_SPEC.format(repos="../lib, ../lib2")
+                         + "- [ ] T3: more — repo: lib2 — files: src/lib.js — deps: none\n")
+        info = self.nxt()
+        self.assertEqual(info["action"], "approve")
+        self.assertIn("lib2", info["message"])
+        self.run_cli("spec", "approve", "m")
+        self.assertEqual(self.nxt()["action"], "build")
+
+    def test_risk_uses_each_repos_own_profile_and_base(self):
+        sh("git branch -m main master && git switch -qc feat/m", self.lib)
+        (self.lib / "src" / "other.js").write_text("x\n")
+        sh("git -c user.email=t@t -c user.name=t add -A && git -c user.email=t@t -c user.name=t commit -qm o", self.lib)
+        self.lib_profile({"git": {"base_branch": "master"},
+                          "risk": [{"name": "dinheiro", "paths": ["src/other.js"], "lenses": ["money"]}]})
+        self.write_multi()
+        self.run_cli("spec", "approve", "m")
+        info = self.nxt()
+        self.assertEqual(info["lenses"], ["contract", "money"])
+        self.assertEqual((info["risk"][0]["name"], info["risk"][0]["repo"]), ("dinheiro", "lib"))
+
+    def test_ready_multi_repo_spec_hands_off_instead_of_shipping(self):
+        self.tasks_done()
+        self.on_branch()
+        self.gate_both()
+        self.run_cli("verify", "record", "m")
+        self.run_cli("review", "record", "m", stdin='{"findings": []}')
+        info = self.nxt()
+        self.assertEqual(info["action"], "review")
+        self.assertIn("contract", info["message"])
+        self.run_cli("review", "record", "m", stdin='{"findings": [], "lenses": ["contract"]}')
+        info = self.nxt()
+        self.assertEqual(info["action"], "handoff")
+        self.assertIn("#10", info["message"])
+        self.assertEqual([r["name"] for r in info["repos"]], ["repo", "lib"])
+        self.run_cli("spec", "done", "m")
+        self.assertEqual(self.nxt()["action"], "done")
+
+    def test_neighbour_with_empty_gate_is_refused(self):
+        self.lib_profile({"gate": {"fast": [], "full": []}})
+        self.tasks_done()
+        self.on_branch()
+        self.gate_both()
+        self.assertEqual(self.run_cli("verify", "record", "m").returncode, 2)
+
+
+class MultiRepoHooks(MultiRepoBase):
+    def setUp(self):
+        super().setUp()
+        profile = json.loads((self.data / "profile.json").read_text())
+        profile["related_repos"] = [{"name": "lib", "path": "../lib"}]
+        ravend.save_json(self.data / "profile.json", profile)
+
+    def approved(self):
+        self.write_multi()
+        self.run_cli("spec", "approve", "m")
+
+    def denied(self, path):
+        res = self.hook("pre-edit", tool_name="Write", tool_input={"file_path": str(path)})
+        return res.stdout if "deny" in res.stdout else ""
+
+    def test_edit_in_an_approved_neighbour_is_allowed_and_uses_its_protected_paths(self):
+        self.assertTrue(self.denied(self.lib / "src" / "lib.js"))  # related, no spec yet: read-only
+        self.approved()
+        self.assertFalse(self.denied(self.lib / "src" / "lib.js"))
+        self.assertIn("secret.txt", self.denied(self.lib / "secret.txt"))
+        self.assertFalse(self.denied(self.lib / "src" / "new" / "dir" / "x.js"))
+
+    def test_neighbour_outside_the_approved_set_is_denied_only_for_multi_repo_specs(self):
+        other = Path(self.tmp.name) / "other"
+        make_repo(other)
+        self.lib_profile({}, repo=other)
+        self.approved()
+        self.assertIn("approved repositories", self.denied(other / "src" / "a.js"))
+        ravend.spec_file(self.data, "m").unlink()
+        self.write_spec()
+        self.assertFalse(self.denied(other / "src" / "a.js"))
+
+    def test_neighbours_are_denied_until_the_runtime_approves_the_repo_set(self):
+        other = Path(self.tmp.name) / "other"
+        make_repo(other)
+        self.lib_profile({}, repo=other)
+        body = MULTI_SPEC.format(repos="../other").replace("repo: lib", "repo: other")
+        self.write_multi(body=body)  # written, not yet approved
+        self.assertIn("approved repositories", self.denied(other / "src" / "a.js"))
+        ravend.spec_file(self.data, "m").unlink()
+        self.write_spec(tier="large", status="draft")
+        self.run_cli("spec", "approve", "s")  # an approval without a repo set (single-repo spec)
+        path = ravend.spec_file(self.data, "s")
+        path.write_text(path.read_text().replace("branch: feat/s\n", "branch: feat/s\nrepos: ../other\n")
+                        .replace("— files: src/sum.js — proves: AC1 — deps: T1", "— repo: other — files: src/lib.js — deps: T1"))
+        self.assertIn("approved repositories", self.denied(other / "src" / "a.js"))
+
+    def test_stop_still_gates_the_session_repo_when_it_has_no_task(self):
+        body = MULTI_SPEC.format(repos="../lib").replace("- [ ] T2: use it — files", "- [ ] T2: use it — repo: lib — files")
+        self.write_multi(body=body)
+        self.run_cli("spec", "approve", "m")
+        self.run_cli("arm", RAVEND_SESSION_ID="s1")
+        (self.repo / "src" / "sum.js").write_text("export const sum = (a, b) => a - b;\n")
+        self.assertEqual(json.loads(self.hook("stop").stdout).get("decision"), "block")
+
+    def test_post_edit_formats_with_the_neighbours_formatter(self):
+        self.lib_profile({"format": [{"glob": "src/*.js", "run": "echo formatted >> {file}"}]})
+        self.approved()
+        self.hook("post-edit", tool_name="Edit", tool_input={"file_path": str(self.lib / "src" / "lib.js")})
+        self.assertIn("formatted", (self.lib / "src" / "lib.js").read_text())
+
+    def test_stop_runs_the_gate_of_each_changed_repo(self):
+        self.lib_profile({"gate": {"fast": [{"name": "lint", "run": "false", "when": ["src/*"]}],
+                                   "full": [{"name": "t", "run": "true"}]}})
+        self.approved()
+        self.run_cli("arm", RAVEND_SESSION_ID="s1")
+        (self.lib / "src" / "lib.js").write_text("export const one = 3;\n")
+        out = json.loads(self.hook("stop").stdout)
+        self.assertEqual(out["decision"], "block")
+        self.assertIn("lib", out["reason"])
+        shutil.rmtree(self.lib)
+        res = self.hook("stop")
+        self.assertEqual(res.returncode, 0)
+        out = json.loads(res.stdout or "{}")
+        self.assertNotEqual(out.get("decision"), "block")
+        self.assertIn("not found", out.get("systemMessage", ""))
+
+    def test_session_start_lists_the_spec_repos(self):
+        self.approved()
+        out = self.hook("session-start").stdout
+        self.assertIn(str(self.lib.resolve()), out)
+        self.assertIn("/add-dir", out)
 
 
 if __name__ == "__main__":

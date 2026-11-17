@@ -238,6 +238,9 @@ class Runner:
                 self.say(f"pausa: revise a spec e continue com: ravend auto --resume {slug}" + (" --pr" if a.pr else ""))
                 self.summary()
                 return 0
+        if ravend.is_multi(ravend._read(ravend.spec_file(self.data, slug))):
+            return self.fail(f"a spec `{slug}` é multi-repo: o `ravend auto` ainda não conduz specs em vários repos "
+                             "(um worktree por repo). Continue no modo interativo com /ravend:continue.", 2)
         self.worktree(slug)
         if not self.lock_checkout():
             return self.fail(f"já existe um `ravend auto` trabalhando em {self.cwd}", 2)
@@ -255,7 +258,7 @@ class Runner:
                     self.say(f"pausa: aprove a spec e continue com: ravend auto --resume {slug}")
                     self.summary()
                     return 0
-                ravend.approve_spec(self.data, slug, "aprovada (ravend auto --no-pause/--resume)")
+                ravend.approve_spec(self.data, slug, "aprovada (ravend auto --no-pause/--resume)", root=self.cwd)
             elif action == "answer":
                 for q in info.get("questions", []):
                     self.say(f"  ? {q}")
@@ -277,7 +280,8 @@ class Runner:
                 out = self.claude("review", f"/ravend:review {slug}{flags}", REVIEW_SCHEMA)
                 st = ravend.spec_state(self.data, slug)
                 last = st["reviews"][-1] if st["reviews"] else None
-                if not last or last.get("fingerprint") != ravend.tree_fingerprint(self.cwd):
+                pid = ravend.project_id(self.cwd)
+                if not last or ravend.record_fingerprints(last, pid).get(pid) != ravend.tree_fingerprint(self.cwd):
                     # the skill could not record it on this code: record it here, keeping the reviewer's full
                     # findings when the skill managed to store them during this stage
                     fresh = last and last.get("raw") and (len(st["reviews"]) > len(before) or last != (before or [None])[-1])

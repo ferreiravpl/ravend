@@ -31,6 +31,7 @@ O resto (as etapas, o gate, o tamanho da demanda) você vê acontecer. Não prec
 - [Quando o Ravend te pergunta algo](#quando-o-ravend-te-pergunta-algo)
 - [Como ele decide o próximo passo](#como-ele-decide-o-próximo-passo)
 - [Áreas de risco e infraestrutura](#áreas-de-risco-e-infraestrutura)
+- [Uma demanda em vários repositórios](#uma-demanda-em-vários-repositórios)
 - [Usando os seus MCPs](#usando-os-seus-mcps)
 - [Todos os comandos](#todos-os-comandos)
 - [Quality gate](#quality-gate)
@@ -141,14 +142,14 @@ Quem decide é código, não o modelo. O comando `ravend next` lê o que está g
 
 | Situação | Próximo passo |
 |---|---|
-| Spec grande, ou que toca área de risco, ainda não aprovada | Pedir sua aprovação |
+| Spec grande, que toca área de risco ou que edita vários repositórios, ainda não aprovada (ou cujos repositórios mudaram desde a aprovação) | Pedir sua aprovação |
 | Spec com pergunta em aberto | Perguntar a você |
 | Tem task pendente | Implementar a próxima task |
 | Tasks prontas, mas o código ainda não foi verificado (ou mudou desde a verificação) | Verificar |
 | Gate vermelho ou critério sem teste | Corrigir e verificar de novo |
 | Verificado, mas sem review deste código | Review (com as lentes da área de risco, se houver) |
 | Review com problema P0/P1 | Corrigir e verificar de novo |
-| Tudo verde e aprovado neste código | Abrir o PR (com sua autorização) |
+| Tudo verde e aprovado neste código | Abrir o PR (com sua autorização) — numa spec de vários repositórios, entregar as branches prontas para você abrir os PRs |
 | PR aberto | Acompanhar o CI do PR |
 | CI vermelho | Corrigir, verificar, revisar e enviar de novo |
 | CI verde | Avisar que o merge é seu |
@@ -183,7 +184,16 @@ Discordou? Force o tamanho com `/ravend:spec --tier large <demanda>` e depois `/
 
 Para uma sessão em que você realmente precisa disso: `RAVEND_GUARD=off`. O guarda protege contra acidentes; ele não é uma sandbox.
 
-**Também é garantido por hook:** o revisor não edita nada, o verificador só escreve testes, e os repositórios relacionados (libs e contratos que este repo consome) são só leitura.
+**Também é garantido por hook:** o revisor não edita nada, o verificador só escreve testes, e os repositórios relacionados (libs e contratos que este repo consome) são só leitura, exceto os que uma spec de vários repositórios aprovada por você inclui.
+
+## Uma demanda em vários repositórios
+
+Em microsserviços, uma demanda costuma atravessar repositórios: o contrato compartilhado, o serviço que publica e o que consome. O Ravend trata isso como **uma spec só**.
+
+- **Quando acontece:** a spec percebe que a demanda precisa mudar um repositório vizinho (na mesma pasta) que já passou pelo `/ravend:init`. Ela lista os repositórios (`repos: ../contratos, ../consumidor`) e cada task diz em qual roda, na ordem das dependências (o contrato antes de quem usa).
+- **O que você faz:** abre o Claude no repositório onde a demanda começa e aprova a spec (sempre, qualquer tamanho). Se o Claude pedir, adicione os outros repositórios à sessão com `/add-dir <caminho>`.
+- **O que é garantido:** cada repositório usa o próprio gate, formatter e arquivos protegidos, na mesma branch; só os repositórios aprovados podem ser editados (incluir outro faz a spec voltar para a sua aprovação); a verificação e o review só valem com todos verdes no código atual de cada um; o review lê todos os diffs juntos e checa se cada repositório pode ir para produção sozinho, em qualquer ordem.
+- **Nesta versão:** quando tudo está pronto, o Ravend entrega as branches e você abre os PRs (a ordem entre PRs que dependem de um artefato publicado ainda está em aberto); feche a spec com `ravend spec done <slug>`. O `ravend auto` não conduz specs de vários repositórios, e a spec só é retomada a partir do repositório onde começou.
 
 ## Usando os seus MCPs
 
@@ -352,10 +362,10 @@ Inativos em repositórios sem `/ravend:init`.
 | Hook | O que faz |
 |---|---|
 | Início da sessão | Mostra o projeto, as notas, as lições, os MCPs escolhidos e as specs em andamento. |
-| Antes de editar | Bloqueia edição dos `protected_paths` (`.env`, chaves, código gerado…) e dos repositórios relacionados; mantém o revisor só leitura e o verificador só em testes. |
+| Antes de editar | Bloqueia edição dos `protected_paths` (`.env`, chaves, código gerado…) e dos repositórios relacionados; numa spec de vários repositórios, libera só os aprovados e usa os arquivos protegidos de cada um; mantém o revisor só leitura e o verificador só em testes. |
 | Antes de um comando | Bloqueia o que muda infra real, faz deploy, merge ou mexe em segredos (veja [Áreas de risco e infraestrutura](#áreas-de-risco-e-infraestrutura)). |
-| Depois de editar | Roda o formatter configurado no arquivo editado. |
-| Ao encerrar | Só durante um build: se o código mudou desde o último gate verde, roda o `gate fast` e não deixa o Claude encerrar com ele vermelho. Depois de 3 bloqueios seguidos, libera e pede sua intervenção. |
+| Depois de editar | Roda o formatter configurado no arquivo editado (o do repositório do arquivo). |
+| Ao encerrar | Só durante um build: se o código mudou desde o último gate verde, roda o `gate fast` (de cada repositório da spec que mudou) e não deixa o Claude encerrar com ele vermelho. Depois de 3 bloqueios seguidos, libera e pede sua intervenção. |
 
 ### Testes que o Ravend escreve
 
@@ -385,7 +395,8 @@ Cerca de 2,5k tokens fixos por sessão (as descrições das skills). O conteúdo
 ### Limitações conhecidas
 
 - A checagem ao encerrar roda o `gate fast` de forma síncrona. Mantenha o fast abaixo de 2 minutos.
-- O paralelismo com `implementer` só vale para tasks que mexem em arquivos diferentes.
+- O paralelismo com `implementer` só vale para tasks que mexem em arquivos diferentes, e não é usado em specs de vários repositórios.
+- Spec de vários repositórios: os PRs são abertos por você, o `ravend auto` recusa e a spec é retomada só a partir do repositório onde começou.
 - Screenshots de referência do Playwright dependem do SO e do navegador. Gere-as no mesmo ambiente do CI.
 - O guarda de comandos reconhece os comandos comuns de Terraform, Helm, kubectl, AWS, gh e docker; ele evita acidentes, mas não é uma sandbox.
 - O acompanhamento do CI usa o `gh` (GitHub). Em outro provedor, registre o resultado com `ravend ci <slug> --state pass|fail`.
