@@ -15,8 +15,8 @@ from .core import PLUGIN_ROOT, base_branch, data_dir, ensure_dirs, git, load_pro
 from .ci import DEFAULT_WAIT_MINUTES, ci_check, print_ci, record_ci
 from .detection import detect
 from .diagnostics import doctor, print_doctor
-from .flow import (FlowError, _set_frontmatter, _verify_ok, approve_spec, mark_task_done, next_action, print_next,
-                   record_review, record_verify, set_spec_status, ship_spec, spec_file, status)
+from .flow import (FlowError, _set_frontmatter, _verify_ok, approve_spec, approved_repos, mark_task_done, next_action,
+                   print_next, record_review, record_verify, set_spec_status, ship_spec, spec_file, status)
 from .gating import _apps, _http_ok, app_start, app_stop, gate
 from .hooks import _hook_input, hook_post_edit, hook_pre_command, hook_pre_edit, hook_session_start, hook_stop, related_repos
 from .mcp import ROLES, STAGES, integrations, mcp_servers
@@ -236,8 +236,12 @@ def _arm(disarm: bool, root: Path) -> int:
             (st / "armed.json").unlink(missing_ok=True)
             print("[ravend] Stop-hook gate disarmed")
         else:
-            save_json(st / "armed.json", {"session": os.environ.get("RAVEND_SESSION_ID") or "*",
-                                          "at": datetime.now().isoformat(timespec="seconds")})
+            armed = {"session": os.environ.get("RAVEND_SESSION_ID") or "*",
+                     "at": datetime.now().isoformat(timespec="seconds")}
+            repos = approved_repos(root)
+            if repos:
+                armed["repos"] = [r["abs"] for r in repos]  # the Stop hook gates each of them
+            save_json(st / "armed.json", armed)
             save_json(st / "stop-blocks.json", {"count": 0})
             print("[ravend] Stop-hook gate armed for this session")
     except OSError as exc:

@@ -15,7 +15,7 @@ from pathlib import Path
 from .core import DEFAULT_PROTECTED, PLUGIN_ROOT, _read, data_dir, load_json, load_profile, project_id, repo_root, save_json, state_dir, tree_fingerprint
 from .gating import _matches, _relative_to_cwd, gate
 from .mcp import integrations
-from .flow import specs_status
+from .flow import approved_repos, is_multi, spec_file, spec_repos, specs_status
 
 # --------------------------------------------------------------------------- hooks
 
@@ -81,6 +81,13 @@ def hook_session_start(inp: dict) -> int:
     active = [s for s in specs_status(d) if s["status"] not in ("done", "abandoned")][:3]
     for s in active:
         out.append(f"active spec `{s['slug']}` [{s['status']}] {s['done']}/{s['total']} tasks · {s['path']}")
+    for s in active:
+        text = _read(spec_file(d, s["slug"]))
+        if is_multi(text):
+            others = [r for r in spec_repos(root, text)[0] if not r["origin"]]
+            out.append(f"multi-repo spec `{s['slug']}` also edits: " + " · ".join(f"{r['name']}={r['abs']}" for r in others)
+                       + " — this session needs those directories: if an edit there is refused for being outside the "
+                       "working directory, ask the developer to run `/add-dir <path>` and retry.")
     if active:
         out.append("To resume, the developer runs /ravend:continue (it asks `ravend.py next` what comes next).")
     print("\n".join(out))
@@ -101,6 +108,32 @@ def _abs_tool_path(inp: dict) -> Path | None:
     ti = inp.get("tool_input") or {}
     p = ti.get("file_path") or ti.get("notebook_path") or ti.get("path")
     return Path(p).resolve() if p else None
+
+
+def _file_repo(target: Path) -> Path | None:
+    """The git repo a (possibly not yet existing) file belongs to: walk up to the first existing folder."""
+    p = target
+    while not p.exists() and p != p.parent:
+        p = p.parent
+    top = repo_root(p if p.is_dir() else p.parent)
+    return top.resolve() if top else None
+
+
+def _edit_context(inp: dict) -> tuple:
+    """(root, profile, rel, in_spec, approved) for an edit. When the active spec is a multi-repo spec approved by
+    the runtime and the file is in one of its repos, root/profile/rel are those of *that* repo."""
+    root = _hook_root(inp)
+    profile = load_profile(root) if root else None
+    target = _abs_tool_path(inp)
+    if not profile or target is None:
+        return root, profile, (_tool_path(inp, root) if root else None), False, None
+    approved = approved_repos(root)
+    if approved:
+        top = _file_repo(target)
+        hit = next((r for r in approved if top and Path(r["abs"]) == top), None)
+        if hit:
+            return top, load_profile(top) or {}, str(target.relative_to(top)), True, approved
+    return root, profile, _tool_path(inp, root), False, approved
 
 
 def _deny(reason: str) -> int:
@@ -141,19 +174,22 @@ def _is_test_path(rel: str, profile: dict) -> bool:
 
 
 def hook_pre_edit(inp: dict) -> int:
-    root = _hook_root(inp)
-    profile = load_profile(root) if root else None
+    root, profile, rel, in_spec, approved = _edit_context(inp)
     if not profile:
         return 0
     target = _abs_tool_path(inp)
     if target is None:
         return 0
-    for repo in related_repos(root, profile):
-        if target == Path(repo["abs"]) or Path(repo["abs"]) in target.parents:
-            return _deny(f"Ravend: `{repo['name']}` ({repo['abs']}) is a related repository, read-only from here. "
-                         "A change there needs its own spec and PR in that repository; record the dependency in "
-                         "this spec (Open questions / Out of scope).")
-    rel = _tool_path(inp, root)
+    if not in_spec:
+        for repo in related_repos(root, profile):
+            if target == Path(repo["abs"]) or Path(repo["abs"]) in target.parents:
+                return _deny(f"Ravend: `{repo['name']}` ({repo['abs']}) is a related repository, read-only from here. "
+                             "A change there needs its own spec and PR in that repository; record the dependency in "
+                             "this spec (Open questions / Out of scope).")
+        top = _file_repo(target) if approved is not None else None
+        if top and top != root.resolve() and load_profile(top):
+            return _deny(f"Ravend: `{top.name}` is not one of this spec's approved repositories. Add it to `repos:` "
+                         "in the spec; the spec then goes back to the developer for approval.")
     if rel is None:
         return 0
     agent = _agent(inp)
@@ -284,11 +320,9 @@ def hook_pre_command(inp: dict) -> int:
 
 
 def hook_post_edit(inp: dict) -> int:
-    root = _hook_root(inp)
-    profile = load_profile(root) if root else None
+    root, profile, rel, _, _ = _edit_context(inp)
     if not profile or os.environ.get("RAVEND_FORMAT") == "off":
         return 0
-    rel = _tool_path(inp, root)
     if rel is None or not (root / rel).exists():
         return 0
     for rule in profile.get("format", []):
@@ -321,25 +355,37 @@ def hook_stop(inp: dict) -> int:
     armed = load_json(st / "armed.json")
     if not armed or armed.get("session") not in ("*", inp.get("session_id")):
         return 0
-    tree = tree_fingerprint(root)
-    if tree and tree == (load_json(st / "green.json", {}) or {}).get("fast"):
-        return 0
+    repos = [Path(p) for p in armed.get("repos") or []] or [root]
+    failed, notes = [], []
+    for repo in repos:
+        if not repo.is_dir() or not load_profile(repo):
+            notes.append(f"Ravend: repository {repo} of the armed spec was not found (or has no profile); its gate was not run.")
+            continue
+        tree = tree_fingerprint(repo)
+        if tree and tree == (load_json(state_dir(repo) / "green.json", {}) or {}).get("fast"):
+            continue
+        buf = io.StringIO()
+        real_stdout, sys.stdout = sys.stdout, buf
+        try:
+            code = gate(repo, "fast")
+        finally:
+            sys.stdout = real_stdout
+        report = buf.getvalue()
+        header = f"== {repo.name} ==\n" if len(repos) > 1 else ""
+        if code == 2:  # misconfigured profile: do not trap the session
+            notes.append("Ravend gate is armed but misconfigured:\n" + header + report[-1500:])
+        elif code != 0:
+            failed.append(header + report)
     blocks_file = st / "stop-blocks.json"
     blocks = (load_json(blocks_file, {}) or {}).get("count", 0)
     max_blocks = int((profile.get("gate") or {}).get("max_stop_blocks", 3))
-    buf = io.StringIO()
-    real_stdout, sys.stdout = sys.stdout, buf
-    try:
-        code = gate(root, "fast")
-    finally:
-        sys.stdout = real_stdout
-    report = buf.getvalue()
-    if code == 0:
-        save_json(blocks_file, {"count": 0})
+    if not failed:
+        if notes:
+            print(json.dumps({"systemMessage": "\n".join(notes)}))
+        else:
+            save_json(blocks_file, {"count": 0})
         return 0
-    if code == 2:  # misconfigured profile: do not trap the session
-        print(json.dumps({"systemMessage": "Ravend gate is armed but misconfigured:\n" + report[-1500:]}))
-        return 0
+    report = "\n".join(failed)
     if blocks >= max_blocks:
         save_json(blocks_file, {"count": 0})
         print(json.dumps({"systemMessage": f"Ravend: quality gate still failing after {max_blocks} attempts — "

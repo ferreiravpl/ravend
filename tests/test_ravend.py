@@ -1,6 +1,7 @@
 """Unit tests for scripts/ravend.py (stdlib unittest). Run: python3 -m unittest discover -s tests"""
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -773,6 +774,65 @@ class MultiRepo(MultiRepoBase):
         self.on_branch()
         self.gate_both()
         self.assertEqual(self.run_cli("verify", "record", "m").returncode, 2)
+
+
+class MultiRepoHooks(MultiRepoBase):
+    def setUp(self):
+        super().setUp()
+        profile = json.loads((self.data / "profile.json").read_text())
+        profile["related_repos"] = [{"name": "lib", "path": "../lib"}]
+        ravend.save_json(self.data / "profile.json", profile)
+
+    def approved(self):
+        self.write_multi()
+        self.run_cli("spec", "approve", "m")
+
+    def denied(self, path):
+        res = self.hook("pre-edit", tool_name="Write", tool_input={"file_path": str(path)})
+        return res.stdout if "deny" in res.stdout else ""
+
+    def test_edit_in_an_approved_neighbour_is_allowed_and_uses_its_protected_paths(self):
+        self.assertTrue(self.denied(self.lib / "src" / "lib.js"))  # related, no spec yet: read-only
+        self.approved()
+        self.assertFalse(self.denied(self.lib / "src" / "lib.js"))
+        self.assertIn("secret.txt", self.denied(self.lib / "secret.txt"))
+        self.assertFalse(self.denied(self.lib / "src" / "new" / "dir" / "x.js"))
+
+    def test_neighbour_outside_the_approved_set_is_denied_only_for_multi_repo_specs(self):
+        other = Path(self.tmp.name) / "other"
+        make_repo(other)
+        self.lib_profile({}, repo=other)
+        self.approved()
+        self.assertIn("approved repositories", self.denied(other / "src" / "a.js"))
+        ravend.spec_file(self.data, "m").unlink()
+        self.write_spec()
+        self.assertFalse(self.denied(other / "src" / "a.js"))
+
+    def test_post_edit_formats_with_the_neighbours_formatter(self):
+        self.lib_profile({"format": [{"glob": "src/*.js", "run": "echo formatted >> {file}"}]})
+        self.approved()
+        self.hook("post-edit", tool_name="Edit", tool_input={"file_path": str(self.lib / "src" / "lib.js")})
+        self.assertIn("formatted", (self.lib / "src" / "lib.js").read_text())
+
+    def test_stop_runs_the_gate_of_each_changed_repo(self):
+        self.lib_profile({"gate": {"fast": [{"name": "lint", "run": "false", "when": ["src/*"]}],
+                                   "full": [{"name": "t", "run": "true"}]}})
+        self.approved()
+        self.run_cli("arm", RAVEND_SESSION_ID="s1")
+        (self.lib / "src" / "lib.js").write_text("export const one = 3;\n")
+        out = json.loads(self.hook("stop").stdout)
+        self.assertEqual(out["decision"], "block")
+        self.assertIn("lib", out["reason"])
+        shutil.rmtree(self.lib)
+        res = self.hook("stop")
+        self.assertEqual(res.returncode, 0)
+        self.assertNotEqual(json.loads(res.stdout or "{}").get("decision"), "block")
+
+    def test_session_start_lists_the_spec_repos(self):
+        self.approved()
+        out = self.hook("session-start").stdout
+        self.assertIn(str(self.lib.resolve()), out)
+        self.assertIn("/add-dir", out)
 
 
 if __name__ == "__main__":
