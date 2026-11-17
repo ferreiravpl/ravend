@@ -255,7 +255,7 @@ class Runner:
                     self.say(f"pausa: aprove a spec e continue com: ravend auto --resume {slug}")
                     self.summary()
                     return 0
-                ravend.approve_spec(self.data, slug, "aprovada (ravend auto --no-pause/--resume)")
+                ravend.approve_spec(self.data, slug, "aprovada (ravend auto --no-pause/--resume)", root=self.cwd)
             elif action == "answer":
                 for q in info.get("questions", []):
                     self.say(f"  ? {q}")

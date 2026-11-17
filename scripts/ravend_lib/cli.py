@@ -178,7 +178,7 @@ def _record(args: argparse.Namespace, root: Path) -> int:
                 raise FlowError("informe o link do PR: ravend spec shipped <slug> --pr <url>")
             note = status_value + (f" — PR {args.pr}" if args.pr else "")
             if args.action == "approve":
-                approve_spec(d, args.slug, note)
+                approve_spec(d, args.slug, note, root=root)
             elif args.action == "shipped":
                 ship_spec(d, args.slug, args.pr)
             else:

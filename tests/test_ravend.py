@@ -716,10 +716,56 @@ class MultiRepo(MultiRepoBase):
         self.on_branch()
         self.gate_both()
         self.run_cli("verify", "record", "m")
-        self.assertEqual(self.run_cli("review", "record", "m", stdin='{"findings": []}').returncode, 0)
+        review = '{"findings": [], "lenses": ["contract"]}'
+        self.assertEqual(self.run_cli("review", "record", "m", stdin=review).returncode, 0)
         self.assertNotIn(self.nxt()["action"], ("verify", "review"))
         (self.lib / "src" / "lib.js").write_text("export const one = 2;\n")
         self.assertEqual(self.nxt()["action"], "verify")
+
+    def test_multi_repo_spec_always_needs_runtime_approval_bound_to_its_repos(self):
+        self.write_multi()
+        self.assertEqual(self.nxt()["action"], "approve")
+        self.run_cli("spec", "approve", "m")
+        self.assertEqual(self.nxt()["action"], "build")
+        lib2 = Path(self.tmp.name) / "lib2"
+        make_repo(lib2)
+        self.lib_profile({}, repo=lib2)
+        self.write_multi(body=MULTI_SPEC.format(repos="../lib, ../lib2")
+                         + "- [ ] T3: more — repo: lib2 — files: src/lib.js — deps: none\n")
+        info = self.nxt()
+        self.assertEqual(info["action"], "approve")
+        self.assertIn("lib2", info["message"])
+        self.run_cli("spec", "approve", "m")
+        self.assertEqual(self.nxt()["action"], "build")
+
+    def test_risk_uses_each_repos_own_profile_and_base(self):
+        sh("git branch -m main master && git switch -qc feat/m", self.lib)
+        (self.lib / "src" / "other.js").write_text("x\n")
+        sh("git -c user.email=t@t -c user.name=t add -A && git -c user.email=t@t -c user.name=t commit -qm o", self.lib)
+        self.lib_profile({"git": {"base_branch": "master"},
+                          "risk": [{"name": "dinheiro", "paths": ["src/other.js"], "lenses": ["money"]}]})
+        self.write_multi()
+        self.run_cli("spec", "approve", "m")
+        info = self.nxt()
+        self.assertEqual(info["lenses"], ["contract", "money"])
+        self.assertEqual((info["risk"][0]["name"], info["risk"][0]["repo"]), ("dinheiro", "lib"))
+
+    def test_ready_multi_repo_spec_hands_off_instead_of_shipping(self):
+        self.tasks_done()
+        self.on_branch()
+        self.gate_both()
+        self.run_cli("verify", "record", "m")
+        self.run_cli("review", "record", "m", stdin='{"findings": []}')
+        info = self.nxt()
+        self.assertEqual(info["action"], "review")
+        self.assertIn("contract", info["message"])
+        self.run_cli("review", "record", "m", stdin='{"findings": [], "lenses": ["contract"]}')
+        info = self.nxt()
+        self.assertEqual(info["action"], "handoff")
+        self.assertIn("#10", info["message"])
+        self.assertEqual([r["name"] for r in info["repos"]], ["repo", "lib"])
+        self.run_cli("spec", "done", "m")
+        self.assertEqual(self.nxt()["action"], "done")
 
     def test_neighbour_with_empty_gate_is_refused(self):
         self.lib_profile({"gate": {"fast": [], "full": []}})

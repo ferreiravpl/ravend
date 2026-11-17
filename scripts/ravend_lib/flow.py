@@ -215,12 +215,17 @@ def ship_spec(d: Path, slug: str, pr: str) -> None:
     path.write_text(_set_frontmatter(path.read_text(encoding="utf-8"), "pr", pr), encoding="utf-8")
 
 
-def approve_spec(d: Path, slug: str, note: str = "aprovada") -> None:
+def approve_spec(d: Path, slug: str, note: str = "aprovada", root: Path | None = None) -> None:
     """A human approval (`ravend spec approve`, or `ravend auto --no-pause/--resume`). Recorded in state.json
-    because a small spec is approved by the spec skill itself: only this record counts for risk areas."""
+    because a small spec is approved by the spec skill itself: only this record counts for risk areas.
+    For a multi-repo spec it also records which repos were approved: only those may be edited."""
+    text = _read(_require_spec(d, slug))
     set_spec_status(d, slug, "approved", note)
     st = spec_state(d, slug)
-    st["approvals"].append({"at": datetime.now().isoformat(timespec="seconds"), "note": note})
+    approval = {"at": datetime.now().isoformat(timespec="seconds"), "note": note}
+    if root is not None and is_multi(text):
+        approval["repos"] = sorted(r["project_id"] for r in spec_repos(root, text)[0])
+    st["approvals"].append(approval)
     _save_spec_state(d, slug, st)
 
 
@@ -236,12 +241,20 @@ def _risk_match(path: str, pattern: str) -> bool:
     return _matches(path, pattern) or _matches("/" + path, pattern)
 
 
-def risk_hits(root: Path, text: str, profile: dict | None) -> list[dict]:
+def risk_hits(root: Path, text: str, profile: dict | None, repo: str | None = None,
+              origin: str | None = None) -> list[dict]:
+    """Risk areas of `root`'s own profile touched by its branch diff and by the tasks' `files:`. With `repo`
+    (multi-repo spec) only the tasks of that repo count (a task without `repo:` belongs to `origin`)."""
     areas = [a for a in ((profile or {}).get("risk") or []) if isinstance(a, dict) and a.get("paths")]
     if not areas:
         return []
     files = set(changed_files(root, "branch", profile))
-    for m in TASK_FILES_RE.finditer(text):
+    if repo is None:
+        task_text = text
+    else:
+        task_text = "\n".join(m.group(0) for m, meta in zip(TASK_RE.finditer(text), task_meta(text))
+                              if (meta["repo"] or origin) == repo)
+    for m in TASK_FILES_RE.finditer(task_text):
         files.update(f.strip().strip("`") for f in m.group(1).split(",") if f.strip())
     hits = []
     for area in areas:
@@ -249,7 +262,8 @@ def risk_hits(root: Path, text: str, profile: dict | None) -> list[dict]:
         touched = sorted(f for f in files if any(_risk_match(f, p) for p in paths))
         if touched:
             hits.append({"name": area.get("name", "risco"), "lenses": list(area.get("lenses") or []),
-                         "approve": area.get("approve", True) is not False, "files": touched[:5]})
+                         "approve": area.get("approve", True) is not False, "files": touched[:5],
+                         **({"repo": repo} if repo is not None else {})})
     return hits
 
 
@@ -263,6 +277,21 @@ def record_fingerprints(entry: dict, origin_pid: str) -> dict:
     if entry.get("fingerprints"):
         return dict(entry["fingerprints"])
     return {origin_pid: entry["fingerprint"]} if entry.get("fingerprint") else {}
+
+
+def approved_repos(root: Path) -> list[dict] | None:
+    """The repos the active spec may edit, when it is a multi-repo spec approved by the runtime: the
+    participants whose project_id is in the last approval. None otherwise (hooks then behave as before)."""
+    d = data_dir(root)
+    slug, early = _pick_spec(root, d)
+    if early or not slug or not spec_file(d, slug).exists():
+        return None
+    text = _read(spec_file(d, slug))
+    approvals = spec_state(d, slug)["approvals"]
+    if not is_multi(text) or not approvals or "repos" not in approvals[-1]:
+        return None
+    allowed = set(approvals[-1]["repos"])
+    return [r for r in spec_repos(root, text)[0] if r["project_id"] in allowed]
 
 
 def _record_repos(root: Path, d: Path, slug: str) -> tuple[str, list[dict]]:
@@ -430,9 +459,21 @@ def next_action(root: Path, slug: str | None = None) -> dict:
                    f"ravend spec approve {slug}")
     st = spec_state(d, slug)
     profile = load_profile(root) or {}
-    hits = risk_hits(root, text, profile)
-    lenses = sorted({lens.lower() for h in hits for lens in h["lenses"]})
-    if hits:
+    if multi:
+        pids = sorted(r["project_id"] for r in repos)
+        last_a = st["approvals"][-1] if st["approvals"] else None
+        if not last_a or sorted(last_a.get("repos") or []) != pids:
+            names = ", ".join(r["name"] for r in repos)
+            why = ("Os repos da spec mudaram desde a aprovação" if last_a
+                   else "Uma spec multi-repo precisa da sua aprovação")
+            return out("approve", f"{why}: ela vai editar {names}.", f"ravend spec approve {slug}")
+        origin_name = root.resolve().name
+        hits = [h for r in repos for h in risk_hits(r["root"], text, load_profile(r["root"]) or {}, r["name"],
+                                                    origin_name)]
+    else:
+        hits = risk_hits(root, text, profile)
+    lenses = sorted({lens.lower() for h in hits for lens in h["lenses"]} | ({"contract"} if len(repos) > 1 else set()))
+    if hits or lenses:
         base.update(risk=hits, lenses=lenses)
     if any(h["approve"] for h in hits) and not st["approvals"]:
         names = ", ".join(h["name"] for h in hits)
@@ -474,10 +515,10 @@ def next_action(root: Path, slug: str | None = None) -> dict:
     last_r = reviews[-1] if reviews else None
     if not last_r or record_fingerprints(last_r, origin_pid) != current:
         return out("review", "Verificada e verde; falta o review deste código."
-                   + (f" Lentes de risco: {', '.join(lenses)}." if lenses else ""), f"/ravend:review {slug}")
+                   + (f" Lentes exigidas: {', '.join(lenses)}." if lenses else ""), f"/ravend:review {slug}")
     missing = [lens for lens in lenses if lens not in (last_r.get("lenses") or [])]
     if missing:
-        return out("review", f"O review deste código não cobriu as lentes de risco: {', '.join(missing)}.",
+        return out("review", f"O review deste código não cobriu as lentes exigidas: {', '.join(missing)}.",
                    f"/ravend:review {slug}")
     if last_r.get("verdict") != "APPROVED":
         rounds = _trailing(reviews, lambda e: e.get("verdict") != "APPROVED")
@@ -495,6 +536,13 @@ def next_action(root: Path, slug: str | None = None) -> dict:
                    fix="review", review=review_file, blocking=last_r.get("blocking", []))
     if status_value == "shipped" and fm.get("pr"):
         return _after_pr(root, slug, fm["pr"], st["ci"], max_rounds, out)
+    if multi:
+        branch = fm.get("branch", "")
+        return out("handoff", f"Pronta em {len(repos)} repos (branch `{branch}` em cada um: "
+                              f"{', '.join(r['name'] for r in repos)}): gate full verde, critérios cobertos e review "
+                              "aprovado no código atual de todos. A abertura dos PRs entre repos ainda não é conduzida "
+                              f"pelo Ravend (#10): abra os PRs e feche a spec com `ravend spec done {slug}`.",
+                   f"ravend spec done {slug}")
     return out("ship", "Pronta para PR: gate full verde, critérios cobertos e review aprovado neste código.",
                f"/ravend:ship {slug}")
 
