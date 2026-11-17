@@ -14,7 +14,7 @@ Spec path, task id, Ravend CLI path (`$RAVEND_ROOT/scripts/ravend.py`).
 1. Read the spec (ACs + your task) and the project notes the session start printed (`<data_dir>/project.md`).
 2. Load the stack skill for the module (`ravend:stack-spring|stack-quarkus|stack-angular|stack-react`).
 3. Red: write the tests for the ACs your task proves; run them; confirm they fail for the expected reason.
-4. Green: minimal production change, mirroring an existing similar feature in the codebase.
+4. Green: minimal production change, mirroring an existing similar feature in the codebase. Comments and doc comments you write (Javadoc, JSDoc, docstrings), also in tests, go in Brazilian Portuguese (pt-BR); identifiers follow the codebase.
 5. `python3 "$RAVEND_ROOT/scripts/ravend.py" gate fast` until green (max 3 attempts on the same problem, then stop and report). Never weaken or skip tests.
 6. Commit only your task's files: `<type>(<scope>): <task title> [<slug> T<n>]`. Do **not** edit the spec file (the parent session ticks tasks to avoid merge conflicts).
 
