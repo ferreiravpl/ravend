@@ -355,7 +355,14 @@ def hook_stop(inp: dict) -> int:
     armed = load_json(st / "armed.json")
     if not armed or armed.get("session") not in ("*", inp.get("session_id")):
         return 0
-    repos = [Path(p) for p in armed.get("repos") or []] or [root]
+    # the session repo always, plus the repos armed for the spec and the ones approved since the arm
+    repos, seen = [], set()
+    for repo in [root, *(Path(p) for p in armed.get("repos") or []),
+                 *(Path(r["abs"]) for r in approved_repos(root) or [])]:
+        key = str(repo.resolve())
+        if key not in seen:
+            seen.add(key)
+            repos.append(repo)
     failed, notes = [], []
     for repo in repos:
         if not repo.is_dir() or not load_profile(repo):

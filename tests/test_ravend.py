@@ -813,6 +813,29 @@ class MultiRepoHooks(MultiRepoBase):
         self.write_spec()
         self.assertFalse(self.denied(other / "src" / "a.js"))
 
+    def test_neighbours_are_denied_until_the_runtime_approves_the_repo_set(self):
+        other = Path(self.tmp.name) / "other"
+        make_repo(other)
+        self.lib_profile({}, repo=other)
+        body = MULTI_SPEC.format(repos="../other").replace("repo: lib", "repo: other")
+        self.write_multi(body=body)  # written, not yet approved
+        self.assertIn("approved repositories", self.denied(other / "src" / "a.js"))
+        ravend.spec_file(self.data, "m").unlink()
+        self.write_spec(tier="large", status="draft")
+        self.run_cli("spec", "approve", "s")  # an approval without a repo set (single-repo spec)
+        path = ravend.spec_file(self.data, "s")
+        path.write_text(path.read_text().replace("branch: feat/s\n", "branch: feat/s\nrepos: ../other\n")
+                        .replace("— files: src/sum.js — proves: AC1 — deps: T1", "— repo: other — files: src/lib.js — deps: T1"))
+        self.assertIn("approved repositories", self.denied(other / "src" / "a.js"))
+
+    def test_stop_still_gates_the_session_repo_when_it_has_no_task(self):
+        body = MULTI_SPEC.format(repos="../lib").replace("- [ ] T2: use it — files", "- [ ] T2: use it — repo: lib — files")
+        self.write_multi(body=body)
+        self.run_cli("spec", "approve", "m")
+        self.run_cli("arm", RAVEND_SESSION_ID="s1")
+        (self.repo / "src" / "sum.js").write_text("export const sum = (a, b) => a - b;\n")
+        self.assertEqual(json.loads(self.hook("stop").stdout).get("decision"), "block")
+
     def test_post_edit_formats_with_the_neighbours_formatter(self):
         self.lib_profile({"format": [{"glob": "src/*.js", "run": "echo formatted >> {file}"}]})
         self.approved()
@@ -831,7 +854,9 @@ class MultiRepoHooks(MultiRepoBase):
         shutil.rmtree(self.lib)
         res = self.hook("stop")
         self.assertEqual(res.returncode, 0)
-        self.assertNotEqual(json.loads(res.stdout or "{}").get("decision"), "block")
+        out = json.loads(res.stdout or "{}")
+        self.assertNotEqual(out.get("decision"), "block")
+        self.assertIn("not found", out.get("systemMessage", ""))
 
     def test_session_start_lists_the_spec_repos(self):
         self.approved()

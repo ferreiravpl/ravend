@@ -280,18 +280,23 @@ def record_fingerprints(entry: dict, origin_pid: str) -> dict:
 
 
 def approved_repos(root: Path) -> list[dict] | None:
-    """The repos the active spec may edit, when it is a multi-repo spec approved by the runtime: the
-    participants whose project_id is in the last approval. None otherwise (hooks then behave as before)."""
+    """The repos the active multi-repo spec may edit: the participants whose project_id is in the last runtime
+    approval — only the origin (if it has tasks) before that approval. None when the active spec is not a
+    multi-repo spec, or there is no single active spec (hooks then behave as before)."""
     d = data_dir(root)
     slug, early = _pick_spec(root, d)
     if early or not slug or not spec_file(d, slug).exists():
         return None
     text = _read(spec_file(d, slug))
-    approvals = spec_state(d, slug)["approvals"]
-    if not is_multi(text) or not approvals or "repos" not in approvals[-1]:
+    if not is_multi(text):
         return None
+    repos = spec_repos(root, text)[0]
+    approvals = spec_state(d, slug)["approvals"]
+    if not approvals or "repos" not in approvals[-1]:
+        # not approved as a multi-repo spec yet: nothing beyond the origin may be edited
+        return [r for r in repos if r["origin"]]
     allowed = set(approvals[-1]["repos"])
-    return [r for r in spec_repos(root, text)[0] if r["project_id"] in allowed]
+    return [r for r in repos if r["project_id"] in allowed]
 
 
 def _record_repos(root: Path, d: Path, slug: str) -> tuple[str, list[dict]]:
