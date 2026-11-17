@@ -7,8 +7,8 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from .core import (_frontmatter, _read, changed_files, data_dir, git, load_json, load_profile, project_id, save_json,
-                   state_dir, tree_fingerprint)
+from .core import (_frontmatter, _read, changed_files, data_dir, git, load_json, load_profile, project_id, ravend_home,
+                   repo_root, save_json, state_dir, tree_fingerprint)
 from .gating import _matches
 from .mcp import integrations
 
@@ -63,6 +63,83 @@ DEFAULT_MAX_FIX_ROUNDS = 2
 
 class FlowError(Exception):
     """A state change that cannot be made (unknown spec/task, gate not run on this code...)."""
+
+
+# --------------------------------------------------------------------------- multi-repo specs
+# A spec may edit sibling repositories: `repos: ../contracts, ../consumer` in the frontmatter (paths relative
+# to the origin repo, the one that holds the spec) and `— repo: <folder>` on each task (absent = origin).
+# Records identify each repo by project_id (stable across clones/worktrees); the folder name is only for the spec.
+
+TASK_REPO_RE = re.compile(r"(?:^|—)\s*repo:\s*([^\s—]+)")
+TASK_DEPS_RE = re.compile(r"(?:^|—)\s*deps:\s*([^—\n]*)")
+
+
+def spec_repo_paths(text: str) -> list[str]:
+    return [p.strip() for p in _frontmatter(text).get("repos", "").split(",") if p.strip()]
+
+
+def is_multi(text: str) -> bool:
+    return bool(spec_repo_paths(text))
+
+
+def task_meta(text: str) -> list[dict]:
+    out = []
+    for m in TASK_RE.finditer(text):
+        rest = m.group(3).lstrip(":").strip()
+        repo = TASK_REPO_RE.search(rest)
+        deps = TASK_DEPS_RE.search(rest)
+        out.append({"id": m.group(2), "done": m.group(1) != " ", "title": rest.split("—")[0].strip(),
+                    "repo": repo.group(1) if repo else None,
+                    "deps": re.findall(r"T\d+", deps.group(1).upper()) if deps else []})
+    return out
+
+
+def _repo_entry(path: str, root: Path, origin: bool, branch: str) -> dict:
+    pid = project_id(root)
+    current = git(["branch", "--show-current"], root) or ""
+    return {"name": root.name, "project_id": pid, "path": path, "abs": str(root), "root": root, "origin": origin,
+            "has_profile": bool(load_json(ravend_home() / "projects" / pid / "profile.json")),
+            "branch": current, "on_branch": bool(branch) and current == branch}
+
+
+def spec_repos(root: Path, text: str) -> tuple[list[dict], list[str]]:
+    """The repos that take part in the spec, origin first, and what is wrong with the declaration (each error
+    becomes a blocking question). Without `repos:` it is just the origin."""
+    root = root.resolve()
+    branch = _frontmatter(text).get("branch", "")
+    origin = _repo_entry(".", root, True, branch)
+    paths = spec_repo_paths(text)
+    if not paths:
+        return [origin], []
+    errors: list[str] = []
+    declared = [origin]
+    for p in paths:
+        target = (root / Path(p).expanduser()).resolve()
+        top = repo_root(target) if target.is_dir() else None
+        if not top:
+            errors.append(f"o repo `{p}` (em `repos:`) não existe ou não é um repositório git")
+            continue
+        entry = _repo_entry(p, Path(top).resolve(), False, branch)
+        if any(e["project_id"] == entry["project_id"] for e in declared):
+            continue
+        if any(e["name"] == entry["name"] for e in declared):
+            errors.append(f"dois repos diferentes se chamam `{entry['name']}` em `repos:`; renomeie uma das pastas")
+            continue
+        if not entry["has_profile"]:
+            errors.append(f"o repo `{entry['name']}` não tem profile do Ravend: rode /ravend:init nele antes")
+        declared.append(entry)
+    names = {e["name"] for e in declared}
+    used = {t["repo"] or origin["name"] for t in task_meta(text)}
+    for name in sorted(used - names):
+        errors.append(f"há task com `repo: {name}`, mas `{name}` não está em `repos:`")
+    for e in declared[1:]:
+        if e["name"] not in used:
+            errors.append(f"o repo `{e['name']}` está em `repos:` mas nenhuma task roda nele")
+    return [e for e in declared if e["name"] in used], errors
+
+
+def _public(repos: list[dict]) -> list[dict]:
+    return [{k: v for k, v in r.items() if k != "root"} for r in repos]
 
 
 def spec_file(d: Path, slug: str) -> Path:
@@ -306,6 +383,13 @@ def next_action(root: Path, slug: str | None = None) -> dict:
         return out("done", "Spec concluída." + (f" PR: {fm['pr']}" if fm.get("pr") else ""))
     if status_value == "abandoned":
         return out("done", "Spec abandonada.")
+    multi = is_multi(text)
+    repos, repo_errors = spec_repos(root, text)
+    if multi:
+        if repo_errors:
+            return out("answer", "A spec multi-repo tem problemas nos repos declarados.", None,
+                       questions=["BLOCKING: " + e for e in repo_errors])
+        base["repos"] = _public(repos)
     if status_value == "draft":
         questions = _open_blocking_questions(text)
         if questions:
@@ -323,12 +407,21 @@ def next_action(root: Path, slug: str | None = None) -> dict:
         return out("approve", f"A spec toca área de risco ({names}) e precisa da sua aprovação antes de seguir.",
                    f"ravend spec approve {slug}")
     tasks = TASK_RE.findall(text)
-    pending = [t for mark, t, _ in tasks if mark == " "]
+    meta = task_meta(text)
+    finished = {t["id"] for t in meta if t["done"]}
+    pending = [t for t in meta if not t["done"]]
     if pending:
-        title = next(rest for mark, t, rest in tasks if t == pending[0])
-        return out("build", f"Implementar {pending[0]}{title.split(' — ')[0].rstrip()} "
-                            f"({len(tasks) - len(pending)}/{len(tasks)} prontas).",
-                   f"/ravend:build {slug}", task=pending[0])
+        ready = [t for t in pending if all(dep in finished for dep in t["deps"])]
+        task = (ready or pending)[0]  # an impossible `deps` must not freeze the spec
+        title = next(rest for mark, t, rest in tasks if t == task["id"])
+        repo = next((r for r in repos if r["name"] == (task["repo"] or repos[0]["name"])), repos[0])
+        extra = {"task": task["id"], "repo": repo["name"], "repo_path": repo["abs"]}
+        if multi:
+            extra["parallel"] = False  # an isolated worktree exists only for the session's repo
+        return out("build", f"Implementar {task['id']}{title.split(' — ')[0].rstrip()}"
+                            + (f" no repo `{repo['name']}`" if multi else "")
+                            + f" ({len(tasks) - len(pending)}/{len(tasks)} prontas).",
+                   f"/ravend:build {slug}", **extra)
     tree = tree_fingerprint(root)
     verifies, reviews = st["verify"], st["reviews"]
     last_v = verifies[-1] if verifies else None

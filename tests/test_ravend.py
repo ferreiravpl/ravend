@@ -346,6 +346,14 @@ class Flow(FlowBase):
         sh("git switch -q -c feat/other", self.repo)
         self.assertEqual(ravend.next_action(self.repo)["slug"], "other")
 
+    def test_next_task_respects_deps(self):
+        path = self.write_spec()
+        path.write_text(path.read_text().replace("first — files: src/sum.js — proves: AC1 — deps: none",
+                                                 "first — files: src/sum.js — proves: AC1 — deps: T2")
+                        .replace("second — files: src/sum.js — proves: AC1 — deps: T1",
+                                 "second — files: src/sum.js — proves: AC1 — deps: none"))
+        self.assertEqual(self.nxt()["task"], "T2")
+
 
 class App(RepoCase):
     def test_app_running_from_another_checkout_blocks_a_second_start(self):
@@ -572,6 +580,100 @@ jobs:
         self.assertEqual(drift, ["`mvn package [native]` (.github/workflows/ci.yml)",
                                  "`terraform fmt` (.github/workflows/ci.yml)"])
         self.assertIn("gate × CI", self.run_cli("doctor", "--no-probe").stdout)
+
+
+MULTI_SPEC = """---
+slug: m
+title: multi
+tier: small
+status: approved
+branch: feat/m
+repos: {repos}
+---
+## Acceptance criteria
+- AC1 [unit]: Given a, when b, then c.
+## Tasks
+- [ ] T1: lib change — repo: lib — files: src/lib.js — proves: AC1 — deps: none
+- [ ] T2: use it — files: src/sum.js — proves: AC1 — deps: T1
+"""
+
+
+def make_repo(path: Path, branch="main"):
+    (path / "src").mkdir(parents=True)
+    (path / "src" / "lib.js").write_text("export const one = 1;\n")
+    (path / "package.json").write_text('{"name":"lib","type":"module"}')
+    sh(f"git init -q -b {branch} && git -c user.email=t@t -c user.name=t add -A && "
+       "git -c user.email=t@t -c user.name=t commit -qm init", path)
+
+
+class MultiRepoBase(FlowBase):
+    def setUp(self):
+        super().setUp()
+        self.lib = Path(self.tmp.name) / "lib"
+        make_repo(self.lib)
+        self.lib_data = ravend.data_dir(self.lib)
+        self.lib_profile({})
+
+    def lib_profile(self, extra, repo=None):
+        profile = {"version": 1, "protected_paths": ["secret.txt"],
+                   "gate": {"fast": [{"name": "t", "run": "true"}], "full": [{"name": "t", "run": "true"}]}}
+        profile.update(extra)
+        ravend.save_json(ravend.data_dir(repo or self.lib) / "profile.json", profile)
+
+    def write_multi(self, repos="../lib", body=None):
+        path = ravend.spec_file(self.data, "m")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body or MULTI_SPEC.format(repos=repos))
+        return path
+
+    def nxt(self):
+        return ravend.next_action(self.repo, "m")
+
+    def cli_in(self, cwd, *args, stdin=None):
+        return subprocess.run([sys.executable, str(SCRIPT), *args], cwd=cwd, input=stdin, capture_output=True,
+                              text=True, env=os.environ.copy())
+
+
+class MultiRepo(MultiRepoBase):
+    def test_repos_and_task_meta_are_parsed(self):
+        text = MULTI_SPEC.format(repos="../lib, ../x")
+        self.assertEqual(ravend.spec_repo_paths(text), ["../lib", "../x"])
+        self.assertTrue(ravend.is_multi(text))
+        self.assertFalse(ravend.is_multi(SPEC.format(tier="small", status="approved")))
+        meta = ravend.task_meta(text)
+        self.assertEqual(meta[0], {"id": "T1", "done": False, "title": "lib change", "repo": "lib", "deps": []})
+        self.assertEqual((meta[1]["repo"], meta[1]["deps"]), (None, ["T1"]))
+
+    def test_participants_resolve_by_project_id_and_dedupe(self):
+        text = self.write_multi("../lib, ../lib/, " + str(self.lib)).read_text()
+        repos, errors = ravend.spec_repos(self.repo, text)
+        self.assertEqual(errors, [])
+        self.assertEqual([r["project_id"] for r in repos], [ravend.project_id(self.repo), ravend.project_id(self.lib)])
+        self.assertEqual([r["name"] for r in repos], ["repo", "lib"])
+        self.assertTrue(repos[0]["origin"])
+
+    def test_invalid_repos_become_blocking_questions(self):
+        self.write_multi("../lib, ../nope")
+        info = self.nxt()
+        self.assertEqual(info["action"], "answer")
+        self.assertTrue(any("../nope" in q for q in info["questions"]))
+        self.write_multi()
+        (self.lib_data / "profile.json").unlink()
+        info = self.nxt()
+        self.assertEqual(info["action"], "answer")
+        self.assertTrue(any("lib" in q and "init" in q for q in info["questions"]))
+        self.lib_profile({})
+        self.write_multi(body=MULTI_SPEC.format(repos="../lib") + "- [ ] T3: x — repo: other — files: a — deps: none\n")
+        self.assertTrue(any("other" in q for q in self.nxt()["questions"]))
+
+    def test_build_points_to_the_task_repo_and_disables_parallel(self):
+        self.write_multi()
+        self.run_cli("spec", "approve", "m")
+        info = self.nxt()
+        self.assertEqual((info["action"], info["task"], info["repo"]), ("build", "T1", "lib"))
+        self.assertEqual(info["repo_path"], str(self.lib.resolve()))
+        self.assertIs(info["parallel"], False)
+        self.assertEqual([r["name"] for r in info["repos"]], ["repo", "lib"])
 
 
 if __name__ == "__main__":
