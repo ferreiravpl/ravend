@@ -13,7 +13,7 @@ from pathlib import Path
 
 from .core import PLUGIN_ROOT, base_branch, data_dir, ensure_dirs, git, load_profile, project_id, repo_root, save_json, state_dir
 from .ci import DEFAULT_WAIT_MINUTES, ci_check, print_ci, record_ci
-from .detection import detect
+from .detection import detect, sibling_repos
 from .diagnostics import doctor, print_doctor
 from .flow import (FlowError, _set_frontmatter, _verify_ok, approve_spec, approved_repos, mark_task_done, next_action,
                    print_next, record_review, record_verify, set_spec_status, ship_spec, spec_file, status)
@@ -279,7 +279,8 @@ def main(argv: list[str]) -> int:
                           "plugin_root": str(PLUGIN_ROOT),
                           "integrations": integrations(load_profile(root)),
                           "related_repos": related_repos(root, load_profile(root) or {}),
-                          "risk": (load_profile(root) or {}).get("risk") or []}, indent=2, ensure_ascii=False))
+                          "risk": (load_profile(root) or {}).get("risk") or [],
+                          "siblings": sibling_repos(root)}, indent=2, ensure_ascii=False))
         return 0
     if args.cmd == "mcp":
         print(json.dumps(mcp_servers(root, probe=not args.no_probe), indent=2, ensure_ascii=False))

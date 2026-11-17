@@ -238,6 +238,9 @@ class Runner:
                 self.say(f"pausa: revise a spec e continue com: ravend auto --resume {slug}" + (" --pr" if a.pr else ""))
                 self.summary()
                 return 0
+        if ravend.is_multi(ravend._read(ravend.spec_file(self.data, slug))):
+            return self.fail(f"a spec `{slug}` é multi-repo: o `ravend auto` ainda não conduz specs em vários repos "
+                             "(um worktree por repo). Continue no modo interativo com /ravend:continue.", 2)
         self.worktree(slug)
         if not self.lock_checkout():
             return self.fail(f"já existe um `ravend auto` trabalhando em {self.cwd}", 2)

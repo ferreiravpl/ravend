@@ -723,6 +723,11 @@ class MultiRepo(MultiRepoBase):
         (self.lib / "src" / "lib.js").write_text("export const one = 2;\n")
         self.assertEqual(self.nxt()["action"], "verify")
 
+    def test_project_lists_siblings_with_profile(self):
+        siblings = json.loads(self.run_cli("project").stdout)["siblings"]
+        lib = next(s for s in siblings if s["name"] == "lib")
+        self.assertTrue(lib["has_profile"])
+
     def test_multi_repo_spec_always_needs_runtime_approval_bound_to_its_repos(self):
         self.write_multi()
         self.assertEqual(self.nxt()["action"], "approve")
