@@ -22,21 +22,25 @@ argument-hint: "<slug | descrição de uma mudança trivial>"
 ## 1. Pick work
 Unchecked tasks in order, respecting `deps`. If ≥2 remaining tasks are marked `[P]` with disjoint files, you may dispatch one `ravend:implementer` agent per task with worktree isolation (Agent tool, `isolation: "worktree"`), give each the spec path + task id, then merge their branches one by one and run `$RV gate fast` after each merge. Otherwise work sequentially in this session — it is cheaper and keeps context coherent.
 
-## 2. Per task: red → green → gate → commit
-1. **Read** only the files listed for the task plus what they directly depend on.
+## 2. Per task: red → green → refactor → gate → commit
+Load [references/clean-code.md](references/clean-code.md) once per session; it is the standard for every line you write.
+1. **Read** only the files listed for the task plus what they directly depend on, and the test helpers/fixtures earlier tasks of this spec created (reuse them, don't copy setup).
 2. **Red**: write the tests for the ACs this task proves, at the level tagged in the AC (`[unit]` → unit test; `[api]` → see `ravend:api-tests`; `[contract]`/`[async]`/`[migration]` → see `ravend:event-tests`; `[infra]` → see `ravend:stack-terraform` / `ravend:stack-helm` / `ravend:stack-github-actions`; `[e2e]`/`[visual]` → see `ravend:e2e-playwright`). Run the narrowest command for those tests and confirm they fail **for the expected reason** (not a compile error in the test itself). Bugs: the failing test must reproduce the report.
-3. **Green**: the minimal production change that makes them pass, following the codebase's existing patterns (find a similar feature and mirror it). No speculative abstractions, no drive-by refactors outside the task's files. Comments and doc comments (Javadoc, JSDoc, docstrings) you write go in pt-BR, also in tests; identifiers follow the codebase.
-4. **Gate**: `$RV gate fast`. On failure read the excerpt (full log path is printed), fix the root cause, re-run. Never weaken, skip, or delete a test to get green; never add `@Disabled`/`.skip`. After 2 failed attempts on the same problem, switch to root-cause debugging (`superpowers:systematic-debugging` if installed: reproduce, isolate, hypothesis, verify) instead of trying variations. After 3: stop, record it in the spec `## Log`, report blocked.
-5. **Close**: `$RV task done <slug> T<n>` — the runtime ticks the box and logs it; never edit the checkbox by hand (`next` reads it). Add a `## Log` line only for a notable decision. If `profile.git.commit_per_task` is not false: review `git status`, stage only this task's files, commit `<type>(<scope>): <task title> [<slug> T<n>]`.
+3. **Green**: the minimal production change that makes them pass, following the codebase's existing patterns (find a similar feature and mirror its structure and conventions, not its complexity). No speculative abstractions, no drive-by refactors outside the task's files.
+4. **Refactor** (tests stay green, behavior unchanged; only code written for this spec): walk the clean-code standard over this task's diff (`git diff`) — flatten if/else ladders with guard clauses, extract helpers until each function does one thing, turn argument-mutating `void` methods into functions that return values, replace duplicated setup/config/catalogs with one source, delete branches no AC needs and comments that restate the code or mention the process. Re-run the task's tests.
+5. **Gate**: `$RV gate fast`. On failure read the excerpt (full log path is printed), fix the root cause, re-run. Never weaken, skip, or delete a test to get green; never add `@Disabled`/`.skip`. After 2 failed attempts on the same problem, switch to root-cause debugging (`superpowers:systematic-debugging` if installed: reproduce, isolate, hypothesis, verify) instead of trying variations. After 3: stop, record it in the spec `## Log`, report blocked.
+6. **Close**: `$RV task done <slug> T<n>` — the runtime ticks the box and logs it; never edit the checkbox by hand (`next` reads it). Add a `## Log` line only for a notable decision. If `profile.git.commit_per_task` is not false: review `git status`, stage only this task's files, commit `<type>(<scope>): <task title> [<slug> T<n>]`.
 
 ## 3. Fix mode (`next` says `fix`)
 - `fix: verify`: `problem` says what failed. Gate red → read the last gate excerpt (`$RV status --json` → `last_gate.full`, log path inside). Uncovered criteria → write the missing tests. Fix only that.
 - `fix: ci`: the PR's CI is red on something the local gate did not catch (native image, another OS/JDK, integration env). Read the excerpts in `logs` (failed steps only). Reproduce locally with the same command when possible; fix the cause. If the local gate lacks that check, tell the developer (`ravend doctor` shows the gate × CI gap). Commit; `next` then re-verifies, re-reviews and asks to push.
 - `fix: review`: read the file in `review` (`review-N.md`). Fix every P0/P1, nothing else; a P0/P1 that is a bug gets a regression test first. If you disagree with a finding, do not silently skip it — write the rebuttal under it in review-N.md.
+- Fixes follow the clean-code standard too (refactor step included). Review and task ids go only in the commit message, never in code or comments.
 - Then gate fast → commit `fix(<scope>): address <gate|review-N> [<slug>]`.
 
 ## 4. Finish
-All tasks ticked + gate fast green → suggest `/ravend:continue` (the next step is verify).
+All tasks ticked → **consolidate**: read the whole spec diff (`git diff <base_branch>...HEAD`; multi-repo: in each `repo_path`) and remove what repeats across tasks (test setup → one helper/fixture, config built in several places → one factory, catalogs kept by hand in several files → one source), plus anything the clean-code standard still flags. Gate fast, then commit `refactor(<scope>): consolidate <slug>` (nothing to change → no commit).
+Gate fast green → suggest `/ravend:continue` (the next step is verify).
 If the change revealed a reusable, project-specific lesson, invoke `ravend:remember`.
 
 ## Output

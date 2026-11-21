@@ -5,7 +5,7 @@
 suite: deployment
 templates: [templates/deployment.yaml]
 tests:
-  - it: sets requests and limits from values            # AC2 [infra]
+  - it: sets requests and limits from values
     set:
       resources.requests.memory: 256Mi
       resources.limits.memory: 512Mi

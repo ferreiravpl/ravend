@@ -40,7 +40,7 @@ List assumptions explicitly. If an open question changes the design or the accep
 ## 4. Write the spec
 Use [references/spec-template.md](references/spec-template.md). Rules:
 - Acceptance criteria are **Given/When/Then**, each tagged with the test level that will prove it: `[unit]`, `[api]`, `[contract]` (event/API contract between producer and consumer), `[async]` (messaging, jobs, retries, idempotency), `[migration]` (schema change safe with the previous app version), `[infra]` (IaC/CI: plan, policy, lint), `[e2e]`, `[visual]`. They become tests in /ravend:build — write them so a test can assert them.
-- Tasks are vertical and small (one commit each), each lists the files it touches and the ACs it proves. Mark `[P]` only when tasks touch disjoint files and have no dependency.
+- Tasks are vertical and small (one commit each), each lists the files it touches and the ACs it proves. Mark `[P]` only when tasks touch disjoint files and have no dependency. When several tasks need the same test setup, fixture or config, the first one creates the shared helper (list its file) and the others depend on it and reuse it.
 - Design section only for `large`: what changes and why, contracts (endpoints/DTOs/schema), trade-offs. Do not restate the codebase.
 - Slug: kebab-case, ≤40 chars. Branch: `<profile.git.branch_prefix or feat/><slug>`.
 - If an existing project lesson in `<data_dir>/knowledge/` applies, reference it in the task.

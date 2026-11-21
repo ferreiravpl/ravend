@@ -20,7 +20,7 @@ Snippets per stack: `ravend:stack-spring` / `ravend:stack-quarkus` references.
 2. The main error path of the AC: validation (400 with the project's error format), not found (404), conflict (409), auth (401/403) when relevant.
 3. Side effects that matter: persisted state (re-fetch via API or repository), emitted events/messages when the AC says so.
 4. Idempotency/pagination/sorting rules when the AC mentions them.
-Name/describe the test with the AC id.
+Name the test after the behavior it proves (no AC ids in code; verify.md maps AC → test).
 
 ## Contract check (when an OpenAPI spec exists)
 - Spring springdoc → `/v3/api-docs`; Quarkus smallrye-openapi → `/q/openapi`.

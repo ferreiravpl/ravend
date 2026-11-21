@@ -76,7 +76,7 @@ Começa uma demanda nova e conduz até o PR. Aceita texto livre, chave do Jira (
 O que acontece:
 1. Escreve uma **spec**: critérios de aceite testáveis e uma lista de tasks, do tamanho da demanda.
 2. Se a demanda for grande, **para e pede sua aprovação** da spec.
-3. Implementa task por task, **teste primeiro**, rodando o quality gate e fazendo um commit por task.
+3. Implementa task por task, **teste primeiro**, refatora seguindo clean code (KISS, DRY, YAGNI), roda o quality gate e faz um commit por task. No fim, consolida o que se repetiu entre as tasks.
 4. **Verifica**: roda a suíte completa e confere se cada critério tem um teste que passa.
 5. Faz um **review** com um agente que não viu a implementação.
 6. Se o review ou a verificação apontarem problemas, corrige e verifica de novo (no máximo 2 rodadas).
@@ -234,7 +234,7 @@ Os três do dia a dia chamam as etapas abaixo na ordem certa. Você pode chamar 
 | `/ravend:doctor` | Diagnostica a configuração e diz o que falta. | `/ravend:doctor` |
 | `/ravend:init` | Configura o repositório na sua máquina. Rodando de novo, pergunta o que refazer. | `/ravend:init` |
 | `/ravend:spec` | Só planeja: escreve a spec, sem implementar. Aceita `--tier` para forçar o tamanho. | `/ravend:spec #45` |
-| `/ravend:build` | Implementa as tasks (teste primeiro, gate, commit). Se a verificação ou o review apontaram problemas, corrige; o Ravend sabe o que falhou. Para algo trivial, aceita a descrição sem spec. | `/ravend:build filtro-categoria` |
+| `/ravend:build` | Implementa as tasks (teste primeiro, refactor, gate, commit). Se a verificação ou o review apontaram problemas, corrige; o Ravend sabe o que falhou. Para algo trivial, aceita a descrição sem spec. | `/ravend:build filtro-categoria` |
 | `/ravend:verify` | Roda a suíte completa, monta a matriz critério → teste e escreve os testes de API/E2E que faltam. Não mexe em código de produção. | `/ravend:verify filtro-categoria` |
 | `/ravend:review` | Review por um agente que não viu a implementação. Findings P0/P1/P2 com arquivo, linha e cenário de falha. | `/ravend:review filtro-categoria` |
 | `/ravend:ship` | Abre o PR (ou envia uma correção para o PR aberto). Recusa se o gate não estiver verde neste código ou se o review não estiver aprovado. Sempre pede confirmação. | `/ravend:ship filtro-categoria` |

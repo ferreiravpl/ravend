@@ -1,6 +1,6 @@
 ---
 name: review
-description: "Review independente das mudanças da spec, feito por um agente que não viu a implementação — correção, critérios de aceite, escopo, segurança e convenções do projeto — com findings P0/P1/P2 e evidência (arquivo:linha e cenário de falha)."
+description: "Review independente das mudanças da spec, feito por um agente que não viu a implementação — correção, critérios de aceite, escopo, segurança, convenções do projeto e clean code — com findings P0/P1/P2 e evidência (arquivo:linha e cenário de falha)."
 argument-hint: "<slug>"
 ---
 
@@ -18,6 +18,7 @@ argument-hint: "<slug>"
 Call the `ravend:reviewer` agent (fresh context = no implementer bias). Prompt it with paths, not content:
 - spec: `<data_dir>/specs/<slug>/spec.md`, verify report: `.../verify.md` (if present)
 - base ref (multi-repo: every repo's path + base ref — the reviewer must read every diff), iteration N (`$RV next <slug> --json` before review: previous reviews are listed in the spec's `state.json`), previous review file if any (check that its P0/P1 were addressed)
+- the clean-code standard: `$RAVEND_ROOT/skills/build/references/clean-code.md`
 - project notes `<data_dir>/project.md` and knowledge index `<data_dir>/knowledge/index.md` (if present)
 - integration findings gathered above (if any)
 - related repositories (`$RV project` → `related_repos`), read-only, when the change depends on their contracts

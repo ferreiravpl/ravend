@@ -87,6 +87,7 @@ ravend/
 ├── skills/                um diretório por comando /ravend:<nome>
 │   ├── start/ continue/ doctor/                  ← dia a dia
 │   ├── init/ spec/ build/ verify/ review/ ship/ remember/   ← etapas e utilidades
+│   ├── build/references/clean-code.md            ← padrão de clean code (build, implementer, verifier, reviewer)
 │   ├── review/references/lenses.md               ← checklists das lentes de risco
 │   ├── api-tests/ event-tests/ e2e-playwright/   ← como escrever testes
 │   └── stack-spring/ stack-quarkus/ stack-angular/ stack-react/
@@ -119,7 +120,7 @@ flowchart TD
   S["Spec<br/>escreve critérios e tasks"] -->|"small, bug"| B
   S -->|"large"| A{{"Você aprova a spec"}}
   S -->|"trivial: sem spec"| T["build direto + gate full"]
-  A --> B["Build<br/>próxima task: teste, código, gate fast, commit"]
+  A --> B["Build<br/>próxima task: teste, código, refactor, gate fast, commit"]
   B -->|"todas as tasks prontas"| V["Verify<br/>gate full + critério × teste"]
   V -->|"vermelho ou sem teste"| F["Corrigir<br/>o estado sabe o que falhou"]
   V -->|"verde e coberto"| R["Review<br/>agente com contexto limpo"]
@@ -180,7 +181,7 @@ Os hooks rodam em toda sessão do Claude Code e saem sem fazer nada em repositó
 
 | Hook | Timeout | Faz | Por que é hook |
 |---|---|---|---|
-| `SessionStart` | 15 s | Injeta a regra de idioma (falar com o dev e escrever comentários/Javadoc em pt-BR, mesmo com demanda/código em inglês), projeto, pasta de dados, stacks, MCPs escolhidos, notas, índice de lições e specs ativas (com a dica de `/ravend:continue`). Exporta `RAVEND_ROOT`, `RAVEND_DATA`, `RAVEND_SESSION_ID`. | O modelo sempre começa sabendo onde estão as coisas. |
+| `SessionStart` | 15 s | Injeta a regra de idioma (falar com o dev em pt-BR, mesmo com demanda/código em inglês; comentários, identificadores, logs e commits seguem a regra escrita do repositório, senão o idioma dos comentários existentes, e só sem nenhum dos dois caem em pt-BR), projeto, pasta de dados, stacks, MCPs escolhidos, notas, índice de lições e specs ativas (com a dica de `/ravend:continue`). Exporta `RAVEND_ROOT`, `RAVEND_DATA`, `RAVEND_SESSION_ID`. | O modelo sempre começa sabendo onde estão as coisas. |
 | `PreToolUse` (Edit/Write) | 10 s | Nega edição de `protected_paths` e de `related_repos`; nega qualquer edição do `reviewer` e edição fora de caminhos de teste do `verifier` (pelo `agent_type` do input). Com spec multi-repo ativa, um arquivo num repo do conjunto aprovado usa o root e o profile **daquele** repo (liberado mesmo se for `related_repos`); um repo irmão com profile fora do conjunto é negado — antes da aprovação, o conjunto é só a origem. | Uma negação do harness não pode ser ignorada. Agents de plugin não aceitam `hooks:` no frontmatter, por isso o hook do plugin identifica o agente. |
 | `PreToolUse` (Bash, MCPs de cloud/git) | 10 s | Nega comandos que mudam infra real, fazem deploy, merge, publicação ou mexem em segredos (`INFRA_DENY` + `profile.guard.deny`), ignorando texto entre aspas e heredocs; para o `reviewer`, também comandos que escrevem. `RAVEND_GUARD=off` desliga. | Evita o acidente "o agente consertou produção". É uma proteção, não uma sandbox. |
 | `PostToolUse` (Edit/Write) | 60 s | Roda o formatter do arquivo editado, com o profile do repo do arquivo (spec multi-repo). | Formatação determinística, sem tokens. |
@@ -279,6 +280,8 @@ Prós: vários devs no mesmo repo sem conflito nem lixo no git; cada um com seus
 | Spec multi-repo: verify e review valem só com todos os repos verdes no código atual | código | recusada | `flow.record_verify` · `flow.record_review` · `next_action` |
 | MCP só nas etapas do papel | prompt | código | skills · `allowed_tools` |
 | Teste antes do código (TDD) | prompt + eval | prompt + eval | skill `build` · eval `build-tdd-gate` |
+| Clean code (refactor por task, consolidação no fim) | prompt + review | prompt + review | `build/references/clean-code.md` · `agents/reviewer.md` · eval `review-flags-maintainability` |
+| Limite de complexidade | código (passo `complexity` do gate, quando o `init` o configura) | idem | `init/references/profile.md` (lizard) |
 | Reviewer não altera código | código (hook nega edição e comandos que escrevem) | idem | `hooks.py` · `agents/reviewer.md` |
 | Verifier não toca em produção | código (hook nega edição fora de caminhos de teste) | idem | `hooks.py` · `agents/verifier.md` |
 
@@ -296,6 +299,8 @@ Cobrem: identidade, placeholders e gate; hooks; descoberta de MCP sem segredos; 
 | `spec-tier-large` | Demanda grande gera spec large com Given/When/Then, design e tasks, sem perguntas no headless e sem gravar no repo. |
 | `build-tdd-gate` | Build escreve teste primeiro, roda o gate e responde o JSON do headless. |
 | `review-catches-boundary-bug` | O reviewer pega um bug de limite que a suíte verde não pega. |
+| `review-flags-maintainability` | O reviewer bloqueia (P1) uma escada de if/else, um método `void` que altera o argumento e comentários que citam o processo, mesmo com a suíte verde. |
+| `comments-follow-repo-language` | Com um `AGENTS.md` que exige comentários em inglês, o build comenta em inglês e responde ao dev em pt-BR. |
 | `review-applies-risk-lens` | Em área de risco, o review despacha um segundo reviewer com a lente (`money`), reporta a lente coberta e pega o cálculo de dinheiro em ponto flutuante. |
 | `continue-follows-next` | O `continue` pergunta ao `next` e segue para o build, sem pular etapas. |
 | `ship-refuses-unready` | O `ship` recusa (sem push, sem PR) quando o `next` não diz `ship`. |
@@ -318,7 +323,7 @@ Cobrem: identidade, placeholders e gate; hooks; descoberta de MCP sem segredos; 
 | `skills/doctor` | Mostra o `ravend doctor` e oferece correções. | Diagnóstico sem ler logs. | — |
 | `skills/init` (+ `references/profile.md`) | Configura o repo: gate, notas, MCPs, comando de terminal. | Comandos de build variam demais para adivinhar. | É a etapa mais conversada; o eval cobre só o caso "perfil existente". |
 | `skills/spec` (+ `references/spec-template.md`) | Classifica o tamanho e escreve a spec. | Uma spec proporcional em vez de quatro artefatos. | O tamanho é julgamento do modelo. |
-| `skills/build` | Tasks test-first, gate fast, commit; correções quando `next` = `fix`. | Onde o código nasce. | "Teste antes" é instrução (coberta por eval). |
+| `skills/build` (+ `references/clean-code.md`) | Tasks test-first, refactor pelo padrão de clean code, gate fast, commit, consolidação no fim; correções quando `next` = `fix`. | Onde o código nasce. | "Teste antes" é instrução (coberta por eval). |
 | `skills/verify` | Gate full, matriz critério × teste, testes que faltam, `verify record`. | "Pronto" com evidência. | A matriz é montada pelo modelo. |
 | `skills/review` (+ `references/lenses.md`) | Despacha o `reviewer` (e um segundo, focado nas lentes, em área de risco) e registra com `review record`. | Contexto limpo para revisar. | O reviewer não usa MCPs; a skill repassa o que coletar. A cobertura das lentes é declarada pelo reviewer. |
 | `skills/ship` | Push e PR quando `next` = `ship`; `spec shipped`; com o PR aberto, só envia a correção. | O PR leva a evidência ao time. | No interativo, a pré-condição é checada pelo modelo lendo o `next`. |

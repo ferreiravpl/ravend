@@ -33,8 +33,9 @@ def _hook_root(inp: dict) -> Path | None:
 LANGUAGE = ("language: talk to the developer in Brazilian Portuguese (pt-BR) — every question, AskUserQuestion "
             "header/option/description, summary and status line — even when the demand, code, specs or skill "
             "instructions are in English. Switch only if the developer writes to you in another language. "
-            "Code comments and doc comments you write (Javadoc, KDoc, JSDoc/TSDoc, docstrings, test descriptions in "
-            "comments) also go in pt-BR; identifiers, log/error messages and commit messages follow the codebase.")
+            "Everything written into the repository — code comments, doc comments, identifiers, log/error messages, "
+            "commit messages — follows the repository's written rules (AGENTS.md, CLAUDE.md, CONTRIBUTING, project "
+            "notes); without one, the language of the existing comments; only a repository with neither uses pt-BR.")
 
 
 def hook_session_start(inp: dict) -> int:

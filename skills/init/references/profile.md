@@ -68,6 +68,13 @@ Placeholders (a step whose placeholder resolves empty is skipped):
 - `{gradle_tests}` — the same as repeated `--tests <pattern>` flags.
 - `{base}` — base branch (for diff-aware tools like diff-cover).
 
+### Complexity step (any stack)
+When the repo has no complexity rule of its own, add to `gate.fast`:
+```json
+{"name": "complexity", "run": "uvx lizard -C 10 -L 40 -w {files}", "when": ["*.java", "*.kt", "*.ts", "*.tsx", "*.js", "*.py", "*.go", "*.dart"]}
+```
+`-w` prints only violations and exits 1 on any (cyclomatic complexity > 10 or function > 40 lines); unsupported files are ignored. No parameter limit: records/DTOs with many fields are legitimate. Keep `when` to the repo's source extensions. `pipx run lizard` when `uvx` is missing.
+
 Changed files: fast = working tree vs HEAD + untracked; full = everything since `merge-base(HEAD, base)` + working tree.
 
 ## Examples
