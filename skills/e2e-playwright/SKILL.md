@@ -28,8 +28,8 @@ Navigate to the page, take accessibility snapshots, perform the flow once. Note 
 ```ts
 import { test, expect } from '@playwright/test';
 
-test.describe('checkout @order-pagination', () => {
-  test('AC3: shows validation error for invalid coupon', async ({ page }) => {
+test.describe('checkout', () => {
+  test('shows validation error for invalid coupon', async ({ page }) => {
     await page.goto('/cart');
     await page.getByLabel('Coupon').fill('NOPE');
     await page.getByRole('button', { name: 'Apply' }).click();
@@ -37,7 +37,7 @@ test.describe('checkout @order-pagination', () => {
   });
 });
 ```
-- Title starts with the AC id; describe tagged with `@<slug>` so `npx playwright test --grep @<slug>` runs just this feature.
+- Titles describe the behavior; no AC ids, spec slugs or other process tags in the code (the AC → test map lives in verify.md). Shared setup goes in fixtures/page helpers, not copied per file.
 - Locators: `getByRole` > `getByLabel` > `getByText` > `getByTestId`. No CSS/XPath chains tied to styling.
 - Web-first assertions (`await expect(locator).toBeVisible()/toHaveText()`); never `waitForTimeout`.
 - Test data: create it through the API or fixtures in the test, independent of other tests and of existing data; clean up if it persists.
@@ -47,6 +47,6 @@ test.describe('checkout @order-pagination', () => {
 `await expect(page).toHaveScreenshot('cart-dark.png', { fullPage: true, maxDiffPixelRatio: 0.01 })` (or a locator screenshot for a component). First run creates baselines with `--update-snapshots`; review them visually before committing. Baselines are OS/browser specific — if CI runs on Linux and the developer on macOS, generate baselines in the CI image (or in Docker `mcr.microsoft.com/playwright`).
 
 ## 5. Run & evidence
-`npx playwright test --grep @<slug>`; on failure inspect `test-results/**/trace.zip` (`npx playwright show-trace`). Copy screenshots that prove visual ACs to `<data_dir>/specs/<slug>/evidence/`.
+`npx playwright test <the new spec files>`; on failure inspect `test-results/**/trace.zip` (`npx playwright show-trace`). Copy screenshots that prove visual ACs to `<data_dir>/specs/<slug>/evidence/`.
 
 Optional: Playwright's own test agents (`npx playwright init-agents --loop=claude`) provide planner/generator/healer agents for larger suites.

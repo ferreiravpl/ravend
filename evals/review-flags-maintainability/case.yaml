@@ -1,0 +1,37 @@
+schema_version: "1.0"
+name: review-flags-maintainability
+description: A correct, green change that breaks the clean-code standard (if/else ladder, argument mutation, process comments) is blocked by the review on maintainability alone.
+tags: [review, clean-code, headless]
+context:
+  scaffold_script: scaffold.sh
+execution:
+  prompt: /ravend:review cart-coupon --headless
+  max_turns: 30
+  timeout_seconds: 600
+  allowed_tools: [Read, Glob, Grep, Skill, Bash, Write, Agent]
+  env:
+    EVAL_RAVEND_HOME: .ravend-home
+runs: 1
+graders:
+  - type: tool_used
+    name: dispatched-reviewer-agent
+    tool: Agent
+    input_match: "reviewer"
+    min: 1
+  - type: regex
+    name: changes-requested
+    pattern: '"verdict"\s*:\s*"CHANGES_REQUESTED"'
+  - type: file_exists
+    name: review-file-written
+    path: .ravend-home/projects/example.com-acme-shop/specs/cart-coupon/review-1.md
+  - type: llm
+    name: flags-maintainability
+    focus:
+      source: file
+      path: .ravend-home/projects/example.com-acme-shop/specs/cart-coupon/review-1.md
+    criteria: >-
+      The review has at least one P1 on src/cart.js about maintainability, and together its findings cover: (1) the
+      nested if/else ladder in total() that guard clauses / early returns would flatten; (2) sumInto() mutating its
+      `result` argument instead of returning the sum; (3) comments that mention the delivery process ("review 1 fix",
+      "[cart-coupon T1]", "AC1 (cart-coupon T1)") or doc comments that only restate names. It does not claim a
+      correctness bug in the discount (the >= 10000 boundary and rounding are correct and tested).

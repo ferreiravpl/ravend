@@ -3,6 +3,8 @@
 #   make-shop.sh base     -> repo + local Ravend profile
 #   make-shop.sh spec     -> base + approved small spec "cart-coupon"
 #   make-shop.sh review   -> spec + feature branch with an implementation containing a boundary bug
+#   make-shop.sh messy    -> spec + feature branch with a correct but unclean implementation
+#   make-shop.sh english  -> spec + AGENTS.md requiring English code comments
 # Ravend data goes to ./.ravend-home (RAVEND_HOME in case.yaml), excluded from git.
 set -euo pipefail
 variant="${1:-base}"
@@ -95,7 +97,70 @@ Customers cannot apply coupons. Marketing needs SAVE10: 10% off carts of 10000 c
 EOF
 [ "$variant" = "spec" ] && exit 0
 
+if [ "$variant" = "english" ]; then
+  cat > AGENTS.md <<'EOF'
+# Agent rules
+- Code comments, doc comments and test descriptions are written in English.
+EOF
+  git add -A && git commit -qm "docs: agent rules"
+  exit 0
+fi
+
 git switch -q -c feat/cart-coupon
+if [ "$variant" = "messy" ]; then
+  cat > src/cart.js <<'EOF'
+/** Total of the cart in cents. items: [{ sku, price, qty }] */
+export function total(items, coupon) {
+  const result = { gross: 0 };
+  sumInto(items, result);
+  if (coupon !== undefined) {
+    if (coupon === 'SAVE10') {
+      if (result.gross >= 10000) {
+        // review 1 fix: apply the 10% discount here [cart-coupon T1]
+        return Math.floor(result.gross * 0.9);
+      } else {
+        return result.gross;
+      }
+    } else {
+      throw new Error('invalid coupon');
+    }
+  } else {
+    return result.gross;
+  }
+}
+
+/**
+ * Sums the items.
+ * @param items the items
+ * @param result the result
+ */
+function sumInto(items, result) {
+  for (const item of items) {
+    result.gross = result.gross + item.price * item.qty;
+  }
+}
+
+export function label(items) {
+  return `Total: ${total(items)}`;
+}
+EOF
+  cat >> test/cart.test.js <<'EOF'
+
+// AC1 (cart-coupon T1)
+test('SAVE10 gives 10% off carts of 10000 cents or more', () => {
+  assert.equal(total([{ sku: 'A', price: 10000, qty: 1 }], 'SAVE10'), 9000);
+  assert.equal(total([{ sku: 'A', price: 20001, qty: 1 }], 'SAVE10'), 18000);
+});
+
+test('SAVE10 does nothing below 10000 cents', () => {
+  assert.equal(total([{ sku: 'A', price: 9999, qty: 1 }], 'SAVE10'), 9999);
+});
+
+test('unknown coupon throws', () => {
+  assert.throws(() => total([], 'NOPE'), /invalid coupon/);
+});
+EOF
+else
 cat > src/cart.js <<'EOF'
 /** Total of the cart in cents. items: [{ sku, price, qty }] */
 export function total(items, coupon) {
@@ -123,6 +188,7 @@ test('unknown coupon throws', () => {
   assert.throws(() => total([], 'NOPE'), /invalid coupon/);
 });
 EOF
+fi
 git add -A && git commit -qm "feat(cart): coupon SAVE10 [cart-coupon T1]"
 sed -i 's/- \[ \] T1/- [x] T1/' "$DATA/specs/cart-coupon/spec.md"
 sed -i 's/^status: approved/status: review/' "$DATA/specs/cart-coupon/spec.md"

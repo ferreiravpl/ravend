@@ -142,7 +142,7 @@ class Hooks(RepoCase):
                            CLAUDE_ENV_FILE=str(env_file))
         self.assertIn("local data dir (never committed)", res.stdout)
         self.assertIn("Brazilian Portuguese (pt-BR)", res.stdout)
-        self.assertIn("doc comments you write", res.stdout)
+        self.assertIn("follows the repository's written rules", res.stdout)
         self.assertIn("RAVEND_SESSION_ID=s9", env_file.read_text())
 
     def test_hooks_are_silent_outside_ravend_projects(self):

@@ -4,7 +4,7 @@
 ```java
 class OrderConfirmedContractTest {
     @Test
-    void serializesLikeTheFixture() throws Exception {                 // AC2 [contract]
+    void serializesLikeTheFixture() throws Exception {
         var clock = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
         var event = OrderEvents.confirmed(order(), clock, fixedId());
         String json = mapper.writeValueAsString(event);
@@ -27,7 +27,7 @@ class PaymentConfirmedConsumerTest {
     @Inject OrderRepository orders;
 
     @Test
-    void duplicateMessageHasOneEffect() {        // AC3 [async]
+    void duplicateMessageHasOneEffect() {
         var msg = message(uuid(), "order-1");
         consumer.handle(msg);
         consumer.handle(msg);
@@ -47,7 +47,7 @@ class PaymentConfirmedConsumerTest {
 ## Async: two replicas at once
 ```java
 @Test
-void onlyOneReplicaReservesTheLastItem() throws Exception {    // AC4 [async]
+void onlyOneReplicaReservesTheLastItem() throws Exception {
     var start = new CountDownLatch(1);
     Callable<Boolean> reserve = () -> { start.await(); return service.reserve("sku-1", customer()); };
     var pool = Executors.newFixedThreadPool(2);
@@ -60,7 +60,7 @@ void onlyOneReplicaReservesTheLastItem() throws Exception {    // AC4 [async]
 ## Jobs with a controllable clock
 ```java
 @Test
-void unpaidOrderIsCancelledWhenTheDeadlinePasses() {           // AC5 [async]
+void unpaidOrderIsCancelledWhenTheDeadlinePasses() {
     var order = service.create(request());                     // schedules the timeout job in the same tx
     clock.advance(Duration.ofMinutes(16));                     // test clock bean, never Instant.now()
     jobs.runDue();                                             // harness runs due jobs synchronously
@@ -73,7 +73,7 @@ void unpaidOrderIsCancelledWhenTheDeadlinePasses() {           // AC5 [async]
 ## Failure classification (retry vs dead-letter)
 ```java
 @Test
-void transientErrorIsRetriedAndPermanentGoesToDlq() {          // AC6 [async]
+void transientErrorIsRetriedAndPermanentGoesToDlq() {
     gateway.failNextWith(new TimeoutException());
     assertThat(consumer.handle(msg)).isEqualTo(Outcome.RETRY_LATER);
     assertThat(consumer.handle(invalidPayload())).isEqualTo(Outcome.DEAD_LETTER);
@@ -83,7 +83,7 @@ void transientErrorIsRetriedAndPermanentGoesToDlq() {          // AC6 [async]
 ## Migration compatible with the previous version
 ```java
 @Test
-void previousVersionInsertStillWorks() {                       // AC7 [migration]
+void previousVersionInsertStillWorks() {
     flyway.migrate();                                          // all migrations, fresh container
     jdbc.update("insert into orders(id, status) values (?, ?)", id, "CREATED");   // old app's insert
     assertThat(jdbc.queryForObject("select priority from orders where id = ?", Integer.class, id)).isEqualTo(0);

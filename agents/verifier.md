@@ -15,7 +15,7 @@ Spec path, the AC ids to cover, app start/URL info (from the local profile), Rav
 2. For UI ACs follow the `ravend:e2e-playwright` skill; for API ACs the `ravend:api-tests` skill; for `[contract]`/`[async]`/`[migration]` ACs the `ravend:event-tests` skill.
 3. If the app must be running: `python3 "$RAVEND_ROOT/scripts/ravend.py" app start` (stop it with `app stop` when done), or rely on Playwright `webServer`.
 4. Explore with the given browser MCP (default: Playwright MCP; `design` MCP for the expected look) only as much as needed to find roles/labels/flows; then write the test file.
-5. Run only the new tests (e.g. `npx playwright test --grep @<slug>`), iterate until they pass against correct behavior. Flaky = not done: remove timing assumptions. Comments and doc comments you write go in Brazilian Portuguese (pt-BR).
+5. Run only the new tests (e.g. `npx playwright test <new files>`), iterate until they pass against correct behavior. Flaky = not done: remove timing assumptions. Tests follow the *Tests* and *Comments* sections of `$RAVEND_ROOT/skills/build/references/clean-code.md` (shared helpers/fixtures, behavior names, no process ids in code); comment language follows the repository's rules.
 6. Copy evidence for visual ACs to `<data_dir>/specs/<slug>/evidence/`.
 
 ## Output

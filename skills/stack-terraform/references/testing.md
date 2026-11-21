@@ -10,7 +10,7 @@ variables {
   environment = "staging"
 }
 
-run "consumer_queue_has_a_dlq" {          # AC3 [infra]
+run "consumer_queue_has_a_dlq" {
   command = plan
 
   assert {
