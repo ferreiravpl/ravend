@@ -4,6 +4,7 @@
 #   make-shop.sh spec     -> base + approved small spec "cart-coupon"
 #   make-shop.sh review   -> spec + feature branch with an implementation containing a boundary bug
 #   make-shop.sh messy    -> spec + feature branch with a correct but unclean implementation
+#   make-shop.sh dense    -> spec + feature branch with a correct, low-complexity but dense implementation
 #   make-shop.sh english  -> spec + AGENTS.md requiring English code comments
 # Ravend data goes to ./.ravend-home (RAVEND_HOME in case.yaml), excluded from git.
 set -euo pipefail
@@ -154,6 +155,35 @@ test('SAVE10 gives 10% off carts of 10000 cents or more', () => {
 
 test('SAVE10 does nothing below 10000 cents', () => {
   assert.equal(total([{ sku: 'A', price: 9999, qty: 1 }], 'SAVE10'), 9999);
+});
+
+test('unknown coupon throws', () => {
+  assert.throws(() => total([], 'NOPE'), /invalid coupon/);
+});
+EOF
+elif [ "$variant" = "dense" ]; then
+  cat > src/cart.js <<'EOF'
+/** Total of the cart in cents. items: [{ sku, price, qty }] */
+export function total(items, coupon) {
+  return coupon === undefined
+    ? items.reduce((sum, item) => sum + item.price * item.qty, 0)
+    : coupon === 'SAVE10'
+      ? [items.reduce((sum, item) => sum + item.price * item.qty, 0)]
+          .map((gross) => [gross, gross >= 10000])
+          .map(([gross, eligible]) => (eligible ? Math.floor((gross * 90) / 100) : gross))[0]
+      : (() => { throw new Error('invalid coupon'); })();
+}
+
+export function label(items) {
+  return `Total: ${total(items)}`;
+}
+EOF
+  cat >> test/cart.test.js <<'EOF'
+
+test('SAVE10 discount', () => {
+  [[10000, 9000], [20001, 18000], [9999, 9999]]
+    .map(([price, expected]) => [total([{ sku: 'A', price, qty: 1 }], 'SAVE10'), expected])
+    .forEach(([actual, expected]) => assert.equal(actual, expected));
 });
 
 test('unknown coupon throws', () => {
