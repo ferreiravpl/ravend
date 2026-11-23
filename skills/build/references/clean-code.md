@@ -14,6 +14,7 @@ The goal is code a developer who never saw the spec understands in **30 seconds 
 
 ## Functions
 - One job, one level of abstraction: a function either **orchestrates** named steps or **does** one low-level step, never both. The name says the job. Aim for ≤ 15 lines.
+- A local variable that holds a multi-step pipeline is not a named step: a body made of several such variables does several low-level jobs — each pipeline becomes a method named after what it returns, and the function keeps only the orchestration.
 - ≤ 3 parameters. More → a parameter object/record. No boolean flag parameters: two functions instead.
 - Return values; don't mutate arguments or outer objects. No `void` method that fills a parameter; no side effects inside pipelines (`forEach`/`peek` changing a builder, list or map declared outside) — build the value with a function that returns it.
 - An expression used twice in a function → a local variable with a name.
@@ -22,13 +23,20 @@ The goal is code a developer who never saw the spec understands in **30 seconds 
 ## Pipelines (streams, LINQ, array chains)
 - A pipeline with more than 3 operations, or one that answers a question ("which orders are overdue?"), lives in its own method named after the answer: `overdueOrders()`. The caller reads the name, not the pipeline.
 - Each step does one thing; logic inside a step goes to a named method. No pipeline nested inside another pipeline's lambda.
+- One operation per line: the source (`orders.stream()`, `Stream.of(...)`) on the first line, then every intermediate and terminal operation (`.filter`, `.map`, `.flatMap`, `.toList`, `.collect`) on its own line — also in short chains. The repository's formatter, when it has one, wins.
 - Never use pairs (`Map.entry`, `Map.Entry`, tuples, 2-element arrays) as a value that travels between steps or methods: declare a small record/type with named fields.
 
 ## Names, literals and types
 - Intention-revealing names, no abbreviations or one-letter names outside trivial lambdas/loops (`request`, not `b`). A variable named after what it holds (`entry`, not `example`, for a map entry).
+- A method that returns data is named after **what it returns** in domain terms (`unpaidInvoices(customer)`, `overdueOrders()`), not after a relation or mechanism (`childrenOf`, `asList`, `process`, `handle`). Parameters and lambda variables too: `invoice`, `lineTotal`, not `x`, `value`, `s`.
 - **No magic literals.** Every number, character or string whose meaning depends on the domain or a protocol gets a named constant or a helper: positions, weights, moduli, status codes, limits, header values, message fragments (`CHECK_DIGIT_MODULUS = 11`, `digitAt(code, i)` instead of `code.charAt(i) - '0'`). Only `0`, `1`, `-1`, `""` and the like used for their arithmetic meaning stay inline.
 - Library navigation chains (`a.getB().getC().get(KEY).getD()`) live in one adapter method named in domain terms; the rest of the code calls it. Raw types and casts from a library are confined there too.
 - Real types for structured data: no `Object[]`, untyped maps, nested collections (`Map<Integer, Set<String>>`) or tuples as domain data, no index-based field access, no cast chains or avoidable unchecked suppressions.
+
+## Layout
+Where the repository has no formatter deciding it:
+- A blank line after every closing brace of a block (`if`, `for`, `while`, `try`, `switch`, a lambda body) before the next statement — not when the next line is another `}` or the same construct continuing (`else`, `catch`, `finally`). A statement right after a statement without braces needs no blank line.
+- One type per file: no class, record, enum or interface declared inside another type — each gets its own file (package-private is fine). Only a framework that requires nesting (e.g. JUnit `@Nested`) is an exception.
 
 ## DRY, YAGNI, KISS
 - **DRY**: one source of truth for each piece of knowledge — a catalog, a config, a mapping, a test setup, a default every row shares. Adding the next item should mean editing one place. Two pipelines with the same shape over different sources → one method with the source as parameter.
