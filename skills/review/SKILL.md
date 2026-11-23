@@ -26,8 +26,8 @@ With lenses, dispatch **two** reviewers in parallel: the general one above, and 
 Each agent returns a JSON object (verdict + findings [+ lenses]).
 
 ## 3. Record
-- Pass the (merged) JSON to the runtime: `$RV review record <slug>` with the JSON on stdin (heredoc), run from the repository root. `next` only accepts the review when its `"lenses"` cover every required lens. Never write the JSON to a file inside the repository: it changes the code being recorded. It numbers the review, writes `review-N.md` (findings grouped P0 → P1 → P2 with scenario and action) and derives the verdict: any P0/P1 means CHANGES_REQUESTED, whatever the agent wrote.
-- If the data dir is read-only (sandbox) and the command fails, write `<data_dir>/specs/<slug>/review-N.md` yourself in that same format (N = existing review files + 1).
+- Pass the (merged) JSON to the runtime: write it with the Write tool to `<data_dir>/specs/<slug>/review-input.json` (never inside the repository: it changes the code being recorded), then run `$RV review record <slug> --file <that path>` from the repository root — one line, no heredoc or redirection, so it also runs headless. `next` only accepts the review when its `"lenses"` cover every required lens. It numbers the review, writes `review-N.md` (findings grouped P0 → P1 → P2 with scenario and action) and derives the verdict: any P0/P1 means CHANGES_REQUESTED, whatever the agent wrote.
+- If the data dir is read-only (sandbox) and the command fails, write `<data_dir>/specs/<slug>/review-N.md` yourself in that same format (N = existing review files + 1). Say so in your output: `next` does not see a review written this way.
 - Next step: `/ravend:continue` (fix round or PR). If a P0/P1 from the previous review is still present, say so explicitly — `next` will stop and hand over.
 - Findings that reflect a reusable, project-specific rule → invoke `ravend:remember` (only if not already enforceable by a linter).
 

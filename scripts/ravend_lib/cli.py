@@ -169,6 +169,14 @@ def _run_hook(event: str) -> int:
         return 0
 
 
+def _inside(path: Path, folder: Path) -> bool:
+    try:
+        path.resolve().relative_to(folder.resolve())
+        return True
+    except ValueError:
+        return False
+
+
 def _record(args: argparse.Namespace, root: Path) -> int:
     d = data_dir(root)
     try:
@@ -206,13 +214,9 @@ def _record(args: argparse.Namespace, root: Path) -> int:
                   + (f", {len(entry['uncovered'])} critério(s) sem teste" if entry["uncovered"] else "")
                   + (" — ok" if _verify_ok(entry) else ""))
         elif args.cmd == "review":
-            if args.file:
-                try:
-                    args.file.resolve().relative_to(root.resolve())
-                    raise FlowError("o arquivo do review está dentro do repositório e muda o código que está sendo "
-                                    "registrado; passe o JSON pela entrada padrão (heredoc) ou por um arquivo fora do repo")
-                except ValueError:
-                    pass
+            if args.file and _inside(args.file, root) and not _inside(args.file, d):
+                raise FlowError("o arquivo do review está dentro do repositório e muda o código que está sendo "
+                                "registrado; grave o JSON na pasta de dados da spec (fora do repo) e passe com --file")
             raw_text = args.file.read_text(encoding="utf-8") if args.file else sys.stdin.read()
             match = re.search(r"\{.*\}", raw_text, re.S)
             if not match:

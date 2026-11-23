@@ -9,7 +9,7 @@ The goal is code a developer who never saw the spec understands in **30 seconds 
 - Guard clauses and early returns instead of `if / else if / else` ladders; no `else` after `return`/`throw`/`continue`.
 - Nesting ≤ 2 levels inside a function — **a lambda counts as a level**. A lambda whose body holds another pipeline, a loop, or more than one condition becomes a named method (pass it as a method reference).
 - Ternary only picks a value. If either side recurses, throws, has an effect, or runs a pipeline → `if` with early return.
-- A compound or negated condition (`&&`, `||`, `!x.equals(y)`) gets a name: a predicate method (`isOutOfStock(item)`) or a local variable.
+- A compound condition (`&&`, `||`) or a negated chain or comparison (`!order.getItems().isEmpty()`, `!x.equals(y)`) gets a name: a predicate method (`hasItems(order)`, `isOutOfStock(item)`) or a local variable. Negating one well-named predicate (`!isSnakeCase(name)`, `not(Order::isPaid)`) is already readable — leave it.
 - The same `switch`/`if` chain over a type or status in more than one place → one lookup table, map or polymorphic method.
 
 ## Functions

@@ -149,6 +149,7 @@ O que `next_action` lê, nesta ordem:
 | Spec multi-repo sem aprovação, ou com repos diferentes dos da última aprovação | `approve` (com `repos`) |
 | Tasks ou diff tocam `profile.risk` e não há aprovação em `state.json → approvals` | `approve` (com `risk`) |
 | Task `- [ ] T<n>` pendente (a primeira com as `deps` prontas) | `build` (com `task`, `repo`, `repo_path`; multi-repo: `parallel: false`) |
+| Spec multi-repo, tasks prontas e algum repo fora da branch da spec | `human` (com `off_branch` e o `git switch` em `command`): trocar o checkout é decisão do dev, e os registros continuam valendo ao voltar |
 | Sem verificação registrada para a impressão digital atual | `verify` |
 | Última verificação deste código falhou | `fix` (`verify`) ou `human` após o limite |
 | Sem review registrado para este código, ou sem as lentes exigidas | `review` (com `lenses`) |
@@ -167,7 +168,7 @@ O que `next_action` lê, nesta ordem:
 |---|---|
 | `ravend task done <slug> T3` | marca a task em `spec.md`, loga e passa a spec para `in-progress` |
 | `ravend verify record <slug> [--uncovered …]` | `state.json → verify[]`, com o resultado do último `gate full` **de cada repo participante** (o desta pasta, numa spec de um repo); recusa se esse gate não rodou no código atual de algum deles ou se algum repo de uma spec multi-repo não está na branch da spec |
-| `ravend review record <slug>` (JSON na entrada) | `state.json → reviews[]` e `review-N.md`; o veredito é derivado (qualquer P0/P1 = `CHANGES_REQUESTED`); recusa `--file` dentro do repositório e, em spec multi-repo, repo fora da branch da spec |
+| `ravend review record <slug> --file <json>` (ou JSON na entrada) | `state.json → reviews[]` e `review-N.md`; o veredito é derivado (qualquer P0/P1 = `CHANGES_REQUESTED`); recusa `--file` dentro do repositório e, em spec multi-repo, repo fora da branch da spec |
 | `ravend spec approve <slug>` | status `approved` e uma entrada em `state.json → approvals` (a única aprovação que vale para área de risco e para spec multi-repo, com `repos`: os `project_id` aprovados) |
 | `ravend spec shipped <slug> --pr URL` | status `shipped` e o link do PR; daí em diante o `next` acompanha o CI |
 | `ravend ci <slug> [--wait N]` | `state.json → ci[]` por commit (`pass`/`fail`/`pending`, checks que falharam, trecho dos logs em `runs/ci-*`); com o PR mergeado, a spec vira `done`. Sem `gh`: `--state pass\|fail\|pending` |
@@ -287,7 +288,7 @@ Prós: vários devs no mesmo repo sem conflito nem lixo no git; cada um com seus
 
 ## Testes e evals
 
-**Testes do runtime** (`tests/`, `unittest`, 71 testes, ~55 s). Criam repositórios git reais em pastas temporárias e rodam a CLI de verdade. O `ravend auto` é testado com um `claude` falso no PATH que imita os efeitos das skills (escreve a spec, marca tasks com `task done`, corrige arquivos), então o loop inteiro roda sem chamar a API.
+**Testes do runtime** (`tests/`, `unittest`, 73 testes, ~55 s). Criam repositórios git reais em pastas temporárias e rodam a CLI de verdade. O `ravend auto` é testado com um `claude` falso no PATH que imita os efeitos das skills (escreve a spec, marca tasks com `task done`, corrige arquivos), então o loop inteiro roda sem chamar a API.
 
 Cobrem: identidade, placeholders e gate; hooks; descoberta de MCP sem segredos; papéis por etapa; estado por worktree e locks; app disputada entre pastas; comando `ravend`; o ciclo completo da máquina de estados (aprovar, tasks, verify recusado sem gate, fix, review derivado, ship, done); escalação por finding repetido; escolha de spec pela branch; `doctor` e gate × CI; áreas de risco (aprovação e lentes); CI depois do PR com um `gh` falso (pendente, vermelho com log, correção enviada, verde, mergeado, registro manual); guarda de comandos e de edição por agente; repos relacionados; spec multi-repo (repos e tasks, validação, ordem por `deps`, aprovação presa aos repos, registros por repo e migração dos antigos, risco por repo, `handoff`, hooks por repo, Stop em vários repos, recusa no `ravend auto`); detecção de Terraform, Helm, workflows e repos irmãos; e o `ravend auto` (pronto para PR, `--pr` até o CI verde, CI vermelho corrigido, pausa e resume, trivial, rodada de review, finding repetido, gate refeito pelo script, limite de rodadas, permissões estreitas, lock de pasta, MCP local no worktree).
 
@@ -344,7 +345,7 @@ Cobrem: identidade, placeholders e gate; hooks; descoberta de MCP sem segredos; 
 
 1. **Hook de Stop síncrono.** Enquanto o gate fast roda, a sessão espera. Mantenha o fast abaixo de 2 minutos.
 2. **Formatos internos do Claude Code.** O comando `ravend` lê `installed_plugins.json`, a descoberta de MCP faz parsing do texto de `claude mcp list` e o prefixo `mcp__<nome>` assume a normalização atual. Há fallback e testes, mas uma mudança no Claude Code pode exigir ajuste.
-3. **Registros em ambiente só leitura.** Onde o Bash não grava (sandbox dos evals), `task done`, `verify record` e `review record` falham e as skills gravam o arquivo à mão. Fora do sandbox, o caminho é sempre o runtime.
+3. **Registros em ambiente só leitura.** Onde o Bash não grava (sandbox dos evals), `task done`, `verify record` e `review record` falham e as skills gravam o arquivo à mão. Fora do sandbox, o caminho é sempre o runtime. O review chega ao runtime por `--file` (JSON gravado na pasta de dados), num comando de uma linha: em modo headless, heredoc e redirecionamento de entrada são negados pela permissão `Bash(python3 …/ravend.py *)`.
 4. **Hooks por agente** dependem do campo `agent_type` que o Claude Code envia quando a ferramenta é chamada dentro de um subagente. Sem ele, o reviewer e o verifier voltam a depender só da instrução.
 5. **Guarda de comandos** reconhece padrões (`terraform apply`, `helm upgrade`, verbos mutantes da AWS…). Um comando ofuscado passa. O objetivo é evitar acidentes, não conter um agente hostil.
 6. **O tamanho da demanda é julgamento do modelo**, coberto pelos evals de tier mas sujeito a variação em casos de fronteira.
