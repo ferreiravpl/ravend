@@ -249,6 +249,9 @@ class RunnerCase(unittest.TestCase):
         self.assertIn("Bash(node --test *)", allowed)
         self.assertNotIn("Bash(npx *)", allowed)
         self.assertNotIn("Bash(node *)", allowed)
+        cli = f"{ravend.PLUGIN_ROOT}/scripts/ravend.py"
+        self.assertIn(f"Bash(python3 {cli} *)", allowed)
+        self.assertIn(f'Bash(python3 "{cli}" *)', allowed)
 
     def test_second_run_on_the_same_worktree_is_refused(self):
         subprocess.run(["git", "worktree", "add", "-q", "-b", "feat/s", str(self.worktree()), "main"],

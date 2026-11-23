@@ -60,6 +60,8 @@ def hook_session_start(inp: dict) -> int:
                   "commands and lets the developer pick which of their MCP servers the pipeline should use).\n" + LANGUAGE)
         return 0
     out = [f"[ravend] project `{project_id(root)}` — local data dir (never committed): {d}",
+           f"Ravend CLI: `{cli}` (plugin root {PLUGIN_ROOT}) — run it with this literal path, one command per Bash call; "
+           "never through a shell variable, `;`, `&&`, a pipe or a redirection, which headless permissions refuse.",
            f"stacks: {', '.join(profile.get('stacks', [])) or '?'} · gate: `{cli} gate fast|full` · status: `{cli} status`",
            LANGUAGE]
     chosen = integrations(profile)

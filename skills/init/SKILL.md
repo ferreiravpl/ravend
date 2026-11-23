@@ -9,7 +9,7 @@ disable-model-invocation: true
 Everything this skill writes goes to `<data_dir>` (`~/.ravend/projects/<project-id>/` unless `RAVEND_HOME` is set). Do **not** create or modify files in the repository (no CLAUDE.md, no scripts, no config) — other developers use the repo too.
 
 ## 1. Facts first
-`RV="python3 $RAVEND_ROOT/scripts/ravend.py"` (empty `RAVEND_ROOT` → this skill's base dir + `/../../scripts/ravend.py`).
+`$RV` = the Ravend CLI line printed at session start (`python3 <plugin root>/scripts/ravend.py`; none → this skill's base dir + `/../../scripts/ravend.py`). Type it as that literal absolute path, one command per Bash call — never a shell variable, `;`, `&&`, a pipe or a redirection: headless permissions refuse those.
 - `$RV project` → `data_dir`, `has_profile`, `base_branch`.
 - `$RV detect` → modules, stacks (incl. terraform, helm, github-actions), build tools, test runners, lint/format signals, compose files, `ci.workflows[].runs` (what CI executes) and `siblings` (repos next to this one, `has_profile` when you already configured them).
 - Existing profile → show a summary of at most 5 lines and ask which parts to redo (AskUserQuestion, multiSelect): gate commands (steps 2–4), project notes (5), risk areas and related repos (6), MCP integrations (7), terminal command (8). Run only those.
