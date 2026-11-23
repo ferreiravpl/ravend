@@ -17,6 +17,9 @@ import ravend_lib as ravend  # noqa: E402
 
 RUNNER = Path(__file__).resolve().parent.parent / "scripts" / "ravend_auto.py"
 
+# The suite never reaches the network: the update check reads from here (nothing is published there).
+os.environ["RAVEND_UPDATE_URL"] = "file:///nonexistent/ravend-published"
+
 FAKE_CLAUDE = r'''#!/usr/bin/env python3
 import json, os, subprocess, sys
 from pathlib import Path

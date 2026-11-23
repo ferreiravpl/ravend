@@ -96,6 +96,7 @@ ravend/
 ├── tests/                 testes do runtime e do ravend auto (unittest)
 ├── evals/                 avaliações do comportamento do modelo (+ fixtures/make-shop.sh)
 ├── docs/ARCHITECTURE.md   este documento
+├── CHANGELOG.md          uma linha por mudança em cada versão; o aviso de atualização mostra as linhas entre a versão instalada e a publicada
 ├── README.md · CLAUDE.md · LICENSE · .gitignore · imgs/
 ```
 
@@ -182,7 +183,7 @@ Os hooks rodam em toda sessão do Claude Code e saem sem fazer nada em repositó
 
 | Hook | Timeout | Faz | Por que é hook |
 |---|---|---|---|
-| `SessionStart` | 15 s | Injeta o comando literal do CLI (`python3 <raiz do plugin>/scripts/ravend.py`, sempre pelo caminho absoluto, um comando por chamada: variável de shell, `;`, `&&`, pipe e redirecionamento são negados em headless), a regra de idioma (falar com o dev em pt-BR, mesmo com demanda/código em inglês; comentários, identificadores, logs e commits seguem a regra escrita do repositório, senão o idioma dos comentários existentes, e só sem nenhum dos dois caem em pt-BR), projeto, pasta de dados, stacks, MCPs escolhidos, notas, índice de lições e specs ativas (com a dica de `/ravend:continue`). Exporta `RAVEND_ROOT`, `RAVEND_DATA`, `RAVEND_SESSION_ID`. | O modelo sempre começa sabendo onde estão as coisas. |
+| `SessionStart` | 15 s | Com versão mais nova publicada, injeta o aviso de atualização com uma linha por mudança do `CHANGELOG.md` e o comando de atualizar, para o modelo avisar o dev antes de rodar qualquer comando (o `plugin.json` e o `CHANGELOG.md` do `main` no GitHub, lidos com timeout de 2 s e cache de 12 h em `RAVEND_HOME/update-check.json`; falha de rede é silenciosa). Injeta o comando literal do CLI (`python3 <raiz do plugin>/scripts/ravend.py`, sempre pelo caminho absoluto, um comando por chamada: variável de shell, `;`, `&&`, pipe e redirecionamento são negados em headless), a regra de idioma (falar com o dev em pt-BR, mesmo com demanda/código em inglês; comentários, identificadores, logs e commits seguem a regra escrita do repositório, senão o idioma dos comentários existentes, e só sem nenhum dos dois caem em pt-BR), projeto, pasta de dados, stacks, MCPs escolhidos, notas, índice de lições e specs ativas (com a dica de `/ravend:continue`). Exporta `RAVEND_ROOT`, `RAVEND_DATA`, `RAVEND_SESSION_ID`. | O modelo sempre começa sabendo onde estão as coisas. |
 | `PreToolUse` (Edit/Write) | 10 s | Nega edição de `protected_paths` e de `related_repos`; nega qualquer edição do `reviewer` e edição fora de caminhos de teste do `verifier` (pelo `agent_type` do input). Com spec multi-repo ativa, um arquivo num repo do conjunto aprovado usa o root e o profile **daquele** repo (liberado mesmo se for `related_repos`); um repo irmão com profile fora do conjunto é negado — antes da aprovação, o conjunto é só a origem. | Uma negação do harness não pode ser ignorada. Agents de plugin não aceitam `hooks:` no frontmatter, por isso o hook do plugin identifica o agente. |
 | `PreToolUse` (Bash, MCPs de cloud/git) | 10 s | Nega comandos que mudam infra real, fazem deploy, merge, publicação ou mexem em segredos (`INFRA_DENY` + `profile.guard.deny`), ignorando texto entre aspas e heredocs; para o `reviewer`, também comandos que escrevem. `RAVEND_GUARD=off` desliga. | Evita o acidente "o agente consertou produção". É uma proteção, não uma sandbox. |
 | `PostToolUse` (Edit/Write) | 60 s | Roda o formatter do arquivo editado, com o profile do repo do arquivo (spec multi-repo). | Formatação determinística, sem tokens. |
@@ -255,7 +256,7 @@ Prós: vários devs no mesmo repo sem conflito nem lixo no git; cada um com seus
 | `detection.py` | Detecção de stacks (incl. Terraform, Helm), workflows de CI e repos irmãos para o `init` | `detect`, `ci_workflows`, `workflow_runs`, `sibling_repos` |
 | `flow.py` | Specs (incluindo multi-repo), máquina de estados, áreas de risco e registros | `next_action`, `spec_repos`, `task_meta`, `approved_repos`, `spec_fingerprints`, `risk_hits`, `approve_spec`, `ship_spec`, `mark_task_done`, `record_verify`, `record_review`, `set_spec_status`, `status` |
 | `ci.py` | CI do PR depois do ship (via `gh`) | `ci_check`, `classify`, `record_ci` |
-| `diagnostics.py` | `ravend doctor`, incluindo gate × CI | `doctor`, `print_doctor`, `ci_drift` |
+| `diagnostics.py` | `ravend doctor`, incluindo gate × CI, e a checagem de versão publicada | `doctor`, `print_doctor`, `ci_drift`, `available_update`, `changes_since` |
 | `hooks.py` | Os hooks e o guarda de comandos | `hook_session_start`, `hook_pre_edit`, `hook_pre_command`, `command_denial`, `related_repos`, `hook_post_edit`, `hook_stop` |
 | `cli.py` | `argparse` (ajuda em pt-BR) e despacho; `hook` e `auto` são roteados antes do parse | `build_parser`, `main`, `install_cli` |
 

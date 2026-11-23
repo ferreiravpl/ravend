@@ -13,6 +13,9 @@ import ravend_lib as ravend  # noqa: E402
 
 SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "ravend.py"
 
+# The suite never reaches the network: the update check reads from here (nothing is published there).
+os.environ["RAVEND_UPDATE_URL"] = "file:///nonexistent/ravend-published"
+
 
 def sh(cmd, cwd, **env):
     return subprocess.run(cmd, cwd=cwd, shell=True, capture_output=True, text=True, env={**os.environ, **env})
@@ -389,6 +392,54 @@ class App(RepoCase):
             sleeper.kill()
             sleeper.wait()
         self.assertIsNone(ravend.app_owner(self.repo))  # dead pids do not block
+
+
+class UpdateNotice(RepoCase):
+    def publish(self, version, changelog=""):
+        published = Path(self.tmp.name) / "published"
+        (published / ".claude-plugin").mkdir(parents=True, exist_ok=True)
+        (published / ".claude-plugin" / "plugin.json").write_text(json.dumps({"version": version}))
+        (published / "CHANGELOG.md").write_text(changelog)
+        return {"RAVEND_UPDATE_URL": published.as_uri()}
+
+    def session_start(self, **env):
+        return self.run_cli("hook", "session-start", stdin=json.dumps({"cwd": str(self.repo)}), **env)
+
+    def test_newer_published_version_is_announced_with_its_changes(self):
+        env = self.publish("99.0.0", "# Changelog\n## 99.0.0\n- big change\n- another one\n## 0.0.1\n- ancient\n")
+        res = self.session_start(**env)
+        self.assertEqual(res.returncode, 0)
+        self.assertIn("update available", res.stdout)
+        self.assertIn("99.0.0 — big change", res.stdout)
+        self.assertIn("99.0.0 — another one", res.stdout)
+        self.assertNotIn("ancient", res.stdout)
+        self.assertIn(ravend.UPDATE_COMMAND, res.stdout)
+
+    def test_installed_version_already_published_is_silent(self):
+        env = self.publish(ravend.diagnostics._plugin_version(), "## 0.0.1\n- ancient\n")
+        self.assertNotIn("update available", self.session_start(**env).stdout)
+
+    def test_unreachable_source_never_breaks_the_session(self):
+        res = self.session_start()
+        self.assertEqual(res.returncode, 0)
+        self.assertNotIn("update available", res.stdout)
+        self.assertIn("local data dir", res.stdout)
+
+    def test_published_release_is_cached_between_sessions(self):
+        self.assertIn("update available", self.session_start(**self.publish("99.0.0")).stdout)
+        self.assertIn("update available", self.session_start(**self.publish(ravend.diagnostics._plugin_version())).stdout)
+
+    def test_doctor_warns_about_the_update(self):
+        res = self.run_cli("doctor", **self.publish("99.0.0", "## 99.0.0\n- big change\n"))
+        self.assertIn("atualização: instalada", res.stdout)
+        self.assertIn("99.0.0 — big change", res.stdout)
+
+    def test_changelog_has_lines_for_the_current_version(self):
+        root = Path(__file__).resolve().parent.parent
+        version = json.loads((root / ".claude-plugin" / "plugin.json").read_text())["version"]
+        lines = ravend.changes_since((root / "CHANGELOG.md").read_text(), "0.0.0", version)
+        self.assertTrue(any(line.startswith(version + " — ") for line in lines),
+                        f"CHANGELOG.md needs a `## {version}` section with at least one `- ` line")
 
 
 class Doctor(RepoCase):
