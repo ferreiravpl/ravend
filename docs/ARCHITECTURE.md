@@ -281,7 +281,7 @@ Prós: vários devs no mesmo repo sem conflito nem lixo no git; cada um com seus
 | Spec multi-repo: verify e review valem só com todos os repos verdes no código atual | código | recusada | `flow.record_verify` · `flow.record_review` · `next_action` |
 | MCP só nas etapas do papel | prompt | código | skills · `allowed_tools` |
 | Teste antes do código (TDD) | prompt + eval | prompt + eval | skill `build` · eval `build-tdd-gate` |
-| Clean code (refactor por task, consolidação no fim) | prompt + review | prompt + review | `build/references/clean-code.md` · `agents/reviewer.md` · evals `review-flags-maintainability` e `review-flags-dense-code` |
+| Clean code (refactor por task, consolidação no fim) | prompt + review | prompt + review | `build/references/clean-code.md` · `agents/reviewer.md` · evals `review-flags-maintainability`, `review-flags-dense-code` e `review-flags-unnamed-pipelines` |
 | Limite de complexidade | código (passo `complexity` do gate, quando o `init` o configura) | idem | `init/references/profile.md` (lizard) |
 | Reviewer não altera código | código (hook nega edição e comandos que escrevem) | idem | `hooks.py` · `agents/reviewer.md` |
 | Verifier não toca em produção | código (hook nega edição fora de caminhos de teste) | idem | `hooks.py` · `agents/verifier.md` |
@@ -302,6 +302,7 @@ Cobrem: identidade, placeholders e gate; hooks; descoberta de MCP sem segredos; 
 | `review-catches-boundary-bug` | O reviewer pega um bug de limite que a suíte verde não pega. |
 | `review-flags-maintainability` | O reviewer bloqueia (P1) uma escada de if/else, um método `void` que altera o argumento e comentários que citam o processo, mesmo com a suíte verde. |
 | `review-flags-dense-code` | O reviewer bloqueia código correto e de complexidade baixa, mas ilegível: ternários decidindo o fluxo, pares atravessando um pipeline, números mágicos e teste-tabela feito de tuplas. |
+| `review-flags-unnamed-pipelines` | O reviewer bloqueia código correto, com constantes e complexidade baixa, mas com nomes de mecanismo (`process`, `x`), várias operações de pipeline numa linha e pipelines guardados em variáveis locais. |
 | `comments-follow-repo-language` | Com um `AGENTS.md` que exige comentários em inglês, o build comenta em inglês e responde ao dev em pt-BR. |
 | `review-applies-risk-lens` | Em área de risco, o review despacha um segundo reviewer com a lente (`money`), reporta a lente coberta e pega o cálculo de dinheiro em ponto flutuante. |
 | `continue-follows-next` | O `continue` pergunta ao `next` e segue para o build, sem pular etapas. |

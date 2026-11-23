@@ -5,6 +5,7 @@
 #   make-shop.sh review   -> spec + feature branch with an implementation containing a boundary bug
 #   make-shop.sh messy    -> spec + feature branch with a correct but unclean implementation
 #   make-shop.sh dense    -> spec + feature branch with a correct, low-complexity but dense implementation
+#   make-shop.sh unnamed  -> spec + feature branch with a correct implementation using mechanism names and one-line pipelines
 #   make-shop.sh english  -> spec + AGENTS.md requiring English code comments
 # Ravend data goes to ./.ravend-home (RAVEND_HOME in case.yaml), excluded from git.
 set -euo pipefail
@@ -187,6 +188,50 @@ test('SAVE10 discount', () => {
 });
 
 test('unknown coupon throws', () => {
+  assert.throws(() => total([], 'NOPE'), /invalid coupon/);
+});
+EOF
+elif [ "$variant" = "unnamed" ]; then
+  cat > src/cart.js <<'EOF'
+const SAVE10 = 'SAVE10';
+const SAVE10_MIN_CENTS = 10000;
+const SAVE10_PERCENT_KEPT = 90;
+const PERCENT = 100;
+
+/** Total of the cart in cents. items: [{ sku, price, qty }] */
+export function total(items, coupon) {
+  const amounts = items.map((x) => x.price * x.qty).filter((x) => x > 0);
+  const sum = amounts.reduce((a, b) => a + b, 0);
+  const valid = [undefined, SAVE10].filter((c) => c === coupon).length > 0;
+  if (!valid) {
+    throw new Error('invalid coupon');
+  }
+  return process(sum, coupon);
+}
+
+function process(value, c) {
+  if (c !== SAVE10 || value < SAVE10_MIN_CENTS) {
+    return value;
+  }
+  return Math.floor((value * SAVE10_PERCENT_KEPT) / PERCENT);
+}
+
+export function label(items) {
+  return `Total: ${total(items)}`;
+}
+EOF
+  cat >> test/cart.test.js <<'EOF'
+
+test('SAVE10 takes 10% off carts of 10000 cents or more', () => {
+  assert.equal(total([{ sku: 'A', price: 10000, qty: 1 }], 'SAVE10'), 9000);
+  assert.equal(total([{ sku: 'A', price: 20001, qty: 1 }], 'SAVE10'), 18000);
+});
+
+test('SAVE10 keeps carts below 10000 cents unchanged', () => {
+  assert.equal(total([{ sku: 'A', price: 9999, qty: 1 }], 'SAVE10'), 9999);
+});
+
+test('an unknown coupon is rejected', () => {
   assert.throws(() => total([], 'NOPE'), /invalid coupon/);
 });
 EOF

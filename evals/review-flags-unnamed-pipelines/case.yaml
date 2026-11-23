@@ -1,0 +1,38 @@
+schema_version: "1.0"
+name: review-flags-unnamed-pipelines
+description: A correct change with named constants and low complexity is still blocked when its functions carry mechanism names, its pipelines put several operations on one line and its body parks pipelines in local variables.
+tags: [review, clean-code, headless]
+context:
+  scaffold_script: scaffold.sh
+execution:
+  prompt: /ravend:review cart-coupon --headless
+  max_turns: 30
+  timeout_seconds: 600
+  allowed_tools: [Read, Glob, Grep, Skill, Bash, Write, Agent]
+  env:
+    EVAL_RAVEND_HOME: .ravend-home
+runs: 1
+graders:
+  - type: tool_used
+    name: dispatched-reviewer-agent
+    tool: Agent
+    input_match: "reviewer"
+    min: 1
+  - type: regex
+    name: changes-requested
+    pattern: '"verdict"\s*:\s*"CHANGES_REQUESTED"'
+  - type: file_exists
+    name: review-file-written
+    path: .ravend-home/projects/example.com-acme-shop/specs/cart-coupon/review-1.md
+  - type: llm
+    name: flags-names-and-layout
+    focus:
+      source: file
+      path: .ravend-home/projects/example.com-acme-shop/specs/cart-coupon/review-1.md
+    criteria: >-
+      The review has at least one P1 on src/cart.js about readability, and together its findings cover at least two
+      of: (1) mechanism or generic names (`process`, `value`, `c`, `x`, `a`/`b`) instead of names saying what is
+      returned or held; (2) pipelines with several operations on one line (`items.map(...).filter(...)`); (3) total()
+      doing several low-level jobs through pipelines parked in local variables (`amounts`, `sum`, `valid`, including
+      the filter-and-count trick to validate the coupon) instead of named helpers. It does not claim a correctness
+      bug in the discount (the >= 10000 boundary and rounding are correct and tested).
