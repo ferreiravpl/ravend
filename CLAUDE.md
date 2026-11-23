@@ -1,6 +1,6 @@
 # Ravend — plugin development
 
-This repo is a Claude Code plugin (and its own marketplace). User-facing docs: README.md (pt-BR) — always the current state; change history goes in release notes (GitHub Releases / PR bodies), never in the README.
+This repo is a Claude Code plugin (and its own marketplace). User-facing docs: README.md (pt-BR) — always the current state; change history goes in PR bodies, never in the README. Every version bump adds one pt-BR line per change to CHANGELOG.md (the update notice shows them; a unit test fails without an entry for the current version).
 
 ## Layout
 - `skills/*/SKILL.md` — prompts. Bodies in English (token-efficient); `description` and `argument-hint` in pt-BR (shown in the `/` menu); everything shown to the user (questions, options, summaries) is pt-BR — the SessionStart hook injects this rule; skills that ask say it too. Keep each SKILL.md short; put long material in `references/`.

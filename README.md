@@ -49,6 +49,7 @@ O resto (as etapas, o gate, o tamanho da demanda) você vê acontecer. Não prec
 ```text
 /plugin install ravend --marketplace ferreiravpl/ravend
 ```
+Quando sair uma versão nova, o Ravend avisa ao abrir a sessão (e no `ravend doctor`) com uma linha por mudança. Para atualizar, rode no terminal `claude plugin marketplace update ravend && claude plugin update ravend@ravend` e reinicie o Claude Code. O histórico fica em [CHANGELOG.md](CHANGELOG.md).
 
 **2. Configure o repositório** (uma vez por repositório, em cada máquina). Abra o Claude Code na pasta do projeto e rode:
 ```text
@@ -415,6 +416,7 @@ Os evals em [`evals/`](evals/) usam um repositório de exemplo e verificam o tam
 
 ```
 .claude-plugin/   plugin.json, marketplace.json
+CHANGELOG.md      uma linha por mudança em cada versão (o aviso de atualização mostra)
 skills/           start, continue, doctor, init, spec, build, verify, review, ship, remember,
                   api-tests, event-tests, e2e-playwright, stack-*
 agents/           reviewer, verifier, implementer

@@ -16,6 +16,7 @@ from .core import DEFAULT_PROTECTED, PLUGIN_ROOT, _read, data_dir, load_json, lo
 from .gating import _matches, _relative_to_cwd, gate
 from .mcp import integrations
 from .flow import approved_repos, is_multi, spec_file, spec_repos, specs_status
+from .diagnostics import UPDATE_COMMAND, available_update
 
 # --------------------------------------------------------------------------- hooks
 
@@ -36,6 +37,14 @@ LANGUAGE = ("language: talk to the developer in Brazilian Portuguese (pt-BR) —
             "Everything written into the repository — code comments, doc comments, identifiers, log/error messages, "
             "commit messages — follows the repository's written rules (AGENTS.md, CLAUDE.md, CONTRIBUTING, project "
             "notes); without one, the language of the existing comments; only a repository with neither uses pt-BR.")
+
+
+def update_notice(update: dict) -> str:
+    changes = "".join(f"\n  - {change}" for change in update["changes"]) or "\n  - (no changelog lines published)"
+    return (f"[ravend] update available: Ravend {update['installed']} is installed, {update['published']} is published. "
+            "Before running any Ravend command or skill, tell the developer in pt-BR, list what changed (one line "
+            f"each, below) and recommend updating first: `{UPDATE_COMMAND}`, then restarting Claude Code. Go on with "
+            "the installed version only if the developer says so. What changed:" + changes)
 
 
 def hook_session_start(inp: dict) -> int:
@@ -64,6 +73,9 @@ def hook_session_start(inp: dict) -> int:
            "never through a shell variable, `;`, `&&`, a pipe or a redirection, which headless permissions refuse.",
            f"stacks: {', '.join(profile.get('stacks', [])) or '?'} · gate: `{cli} gate fast|full` · status: `{cli} status`",
            LANGUAGE]
+    update = available_update()
+    if update:
+        out.insert(1, update_notice(update))
     chosen = integrations(profile)
     if chosen:
         out.append("integrations (the developer's MCP servers for each role — prefer them in the listed stages; "

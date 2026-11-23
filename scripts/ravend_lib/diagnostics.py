@@ -1,13 +1,17 @@
 """`ravend doctor`: checks the installation and the project setup and says how to fix each problem."""
 from __future__ import annotations
 
+import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import time
+import urllib.request
 from pathlib import Path
 
-from .core import PLUGIN_ROOT, data_dir, load_json, load_profile
+from .core import PLUGIN_ROOT, data_dir, load_json, load_profile, ravend_home, save_json
 from .detection import ci_workflows
 from .mcp import integrations, mcp_servers
 
@@ -98,8 +102,117 @@ def _check(name: str, ok: bool | None, detail: str, fix: str = "") -> dict:
     return {"check": name, "status": "ok" if ok else ("warn" if ok is None else "fail"), "detail": detail, "fix": fix}
 
 
+def _plugin_manifest() -> dict:
+    return load_json(PLUGIN_ROOT / ".claude-plugin" / "plugin.json", {}) or {}
+
+
 def _plugin_version() -> str:
-    return (load_json(PLUGIN_ROOT / ".claude-plugin" / "plugin.json", {}) or {}).get("version", "?")
+    return _plugin_manifest().get("version", "?")
+
+
+# Update check: the published version and changelog are read from the plugin's repository (main branch),
+# at most once per UPDATE_TTL_SECONDS, never blocking a session for more than UPDATE_TIMEOUT_SECONDS.
+UPDATE_COMMAND = "claude plugin marketplace update ravend && claude plugin update ravend@ravend"
+UPDATE_TTL_SECONDS = 12 * 3600
+FAILED_CHECK_TTL_SECONDS = 3600
+UPDATE_TIMEOUT_SECONDS = 2
+MAX_CHANGE_LINES = 12
+_CHANGELOG_HEADING = re.compile(r"^##\s*\[?v?(\d+\.\d+\.\d+)")
+_CHANGELOG_ITEM = re.compile(r"^\s*[-*]\s+(.+)")
+
+
+def _version_key(version: str) -> tuple:
+    return tuple(int(part) for part in re.findall(r"\d+", version)[:3])
+
+
+def _published_base_url() -> str | None:
+    """Raw-file URL of the plugin's main branch; RAVEND_UPDATE_URL overrides it (tests, mirrors)."""
+    override = os.environ.get("RAVEND_UPDATE_URL")
+    if override:
+        return override.rstrip("/")
+
+    github = re.match(r"https://github\.com/([^/]+/[^/#?]+?)(?:\.git)?/?$", _plugin_manifest().get("repository", ""))
+    if not github:
+        return None
+
+    return f"https://raw.githubusercontent.com/{github.group(1)}/main"
+
+
+def _download_text(url: str) -> str:
+    with urllib.request.urlopen(url, timeout=UPDATE_TIMEOUT_SECONDS) as response:
+        return response.read().decode("utf-8")
+
+
+def _fetch_published(base_url: str) -> dict | None:
+    try:
+        version = json.loads(_download_text(base_url + "/.claude-plugin/plugin.json")).get("version")
+    except (OSError, ValueError):
+        return None
+
+    try:
+        changelog = _download_text(base_url + "/CHANGELOG.md")
+    except (OSError, ValueError):
+        changelog = ""
+
+    return {"version": version, "changelog": changelog}
+
+
+def _published_release() -> dict | None:
+    """{"version", "changelog"} of the published plugin, cached in RAVEND_HOME; None when it cannot be known."""
+    cache_file = ravend_home() / "update-check.json"
+    cached = load_json(cache_file, {}) or {}
+    ttl = UPDATE_TTL_SECONDS if cached.get("published") else FAILED_CHECK_TTL_SECONDS
+    if time.time() - cached.get("checked_at", 0) < ttl:
+        return cached.get("published")
+
+    base_url = _published_base_url()
+    published = _fetch_published(base_url) if base_url else None
+    try:
+        save_json(cache_file, {"checked_at": time.time(), "published": published})
+    except OSError:
+        pass
+
+    return published
+
+
+def changes_since(changelog: str, installed: str, published: str) -> list[str]:
+    """One "<version> — <change>" line per changelog item newer than `installed`, up to `published`."""
+    lines, version = [], None
+    for line in changelog.splitlines():
+        heading = _CHANGELOG_HEADING.match(line)
+        if heading:
+            version = heading.group(1)
+            continue
+
+        item = _CHANGELOG_ITEM.match(line)
+        if item and version and _version_key(installed) < _version_key(version) <= _version_key(published):
+            lines.append(f"{version} — {item.group(1).strip()}")
+
+    return lines[:MAX_CHANGE_LINES]
+
+
+def available_update() -> dict | None:
+    """{"installed", "published", "changes"} when a newer Ravend is published; None otherwise or when unknown."""
+    installed = _plugin_version()
+    published = _published_release()
+    if not published or not published.get("version"):
+        return None
+
+    if _version_key(published["version"]) <= _version_key(installed):
+        return None
+
+    changes = changes_since(published.get("changelog") or "", installed, published["version"])
+    return {"installed": installed, "published": published["version"], "changes": changes}
+
+
+def _update_check() -> dict:
+    update = available_update()
+    if not update:
+        return _check("atualização", True, "nenhuma versão mais nova publicada (ou sem rede)")
+
+    detail = f"instalada {update['installed']}, publicada {update['published']}"
+    detail += "".join(f"\n          {change}" for change in update["changes"])
+    return _check("atualização", None, detail, f"{UPDATE_COMMAND} e reinicie o Claude Code")
 
 
 def doctor(root: Path | None, probe: bool = True) -> list[dict]:
@@ -108,6 +221,8 @@ def doctor(root: Path | None, probe: bool = True) -> list[dict]:
               _check("claude", bool(shutil.which("claude")), shutil.which("claude") or "não encontrado",
                      "necessário para `ravend auto`; instale o Claude Code CLI"),
               _check("plugin", True, f"Ravend {_plugin_version()} em {PLUGIN_ROOT}")]
+    if probe:
+        checks.append(_update_check())
     if not root:
         checks.append(_check("repositório", False, "fora de um repositório git", "rode dentro do repositório do projeto"))
         return checks
