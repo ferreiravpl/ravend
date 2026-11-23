@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 from datetime import datetime
 from pathlib import Path
 
@@ -500,6 +501,9 @@ def next_action(root: Path, slug: str | None = None) -> dict:
                             + (f" no repo `{repo['name']}`" if multi else "")
                             + f" ({len(tasks) - len(pending)}/{len(tasks)} prontas).",
                    f"/ravend:build {slug}", **extra)
+    off_branch = [r for r in repos if not r["on_branch"]] if multi else []
+    if off_branch:
+        return _off_branch_action(off_branch, fm.get("branch", ""), out)
     current = spec_fingerprints(repos)
     origin_pid = repos[0]["project_id"]
     verifies, reviews = st["verify"], st["reviews"]
@@ -550,6 +554,16 @@ def next_action(root: Path, slug: str | None = None) -> dict:
                    f"ravend spec done {slug}")
     return out("ship", "Pronta para PR: gate full verde, critérios cobertos e review aprovado neste código.",
                f"/ravend:ship {slug}")
+
+
+def _off_branch_action(off_branch: list[dict], branch: str, out) -> dict:
+    """A repo of a multi-repo spec left the spec branch. Verify and review records belong to the spec branch's code,
+    so the answer is to switch back, not to verify again; and switching someone's checkout is the developer's call."""
+    where = ", ".join(f"`{r['name']}` (em `{r['branch'] or 'HEAD solto'}`)" for r in off_branch)
+    command = " && ".join(f"git -C {shlex.quote(r['abs'])} switch {shlex.quote(branch)}" for r in off_branch)
+    return out("human", f"Repo(s) fora da branch `{branch}` da spec: {where}. Verificação e review valem para o "
+                        "código dessa branch; troque de volta e siga. Mantenha os repos na branch da spec até "
+                        "concluí-la.", command, off_branch=[r["name"] for r in off_branch])
 
 
 def _ci_ok(entry: dict) -> bool:

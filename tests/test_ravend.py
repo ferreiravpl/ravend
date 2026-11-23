@@ -320,11 +320,22 @@ class Flow(FlowBase):
         (self.repo / "review.json").write_text('{"findings": []}')
         res = self.run_cli("review", "record", "s", "--file", str(self.repo / "review.json"))
         self.assertEqual(res.returncode, 2)
-        self.assertIn("entrada padrão", res.stderr)
+        self.assertIn("pasta de dados", res.stderr)
         outside = Path(self.tmp.name) / "review.json"
         outside.write_text('{"findings": []}')
         self.assertEqual(self.run_cli("review", "record", "s", "--file", str(outside)).returncode, 0)
         self.assertEqual(ravend.spec_state(self.data, "s")["reviews"][0]["raw"], {"findings": []})
+
+    def test_review_file_in_a_data_dir_inside_the_repo_is_accepted(self):
+        os.environ["RAVEND_HOME"] = str(self.repo / ".ravend-home")  # as in the evals: data dir inside the repo
+        (self.repo / ".git" / "info" / "exclude").write_text(".ravend-home/\n")
+        self.data = ravend.data_dir(self.repo)
+        ravend.save_json(self.data / "profile.json", {"version": 1, "gate": {"fast": [], "full": []}})
+        review_input = self.write_spec().parent / "review-input.json"
+        review_input.write_text('{"findings": []}')
+        res = self.run_cli("review", "record", "s", "--file", str(review_input))
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(len(ravend.spec_state(self.data, "s")["reviews"]), 1)
 
     def test_repeated_review_findings_escalate_to_human(self):
         self.write_spec()
@@ -701,7 +712,9 @@ class MultiRepo(MultiRepoBase):
 
     def test_verify_needs_every_repo_gated_on_the_spec_branch(self):
         self.tasks_done()
-        self.assertEqual(self.nxt()["action"], "verify")
+        info = self.nxt()
+        self.assertEqual((info["action"], info["off_branch"]), ("human", ["repo", "lib"]))
+        self.assertIn("switch feat/m", info["command"])
         res = self.run_cli("verify", "record", "m")
         self.assertEqual(res.returncode, 2)
         self.assertIn("feat/m", res.stderr)
@@ -712,6 +725,20 @@ class MultiRepo(MultiRepoBase):
         self.assertIn("lib", res.stderr)
         self.cli_in(self.lib, "gate", "full")
         self.assertEqual(self.run_cli("verify", "record", "m").returncode, 0)
+        self.assertEqual(self.nxt()["action"], "review")
+
+    def test_neighbour_switched_away_asks_to_switch_back_without_reverifying(self):
+        self.tasks_done()
+        self.on_branch()
+        self.gate_both()
+        self.run_cli("verify", "record", "m")
+        self.assertEqual(self.nxt()["action"], "review")
+        sh("git switch -q main", self.lib)
+        info = self.nxt()
+        self.assertEqual((info["action"], info["off_branch"]), ("human", ["lib"]))
+        self.assertIn("em `main`", info["message"])
+        self.assertIn(f"git -C {self.lib} switch feat/m", info["command"])
+        sh("git switch -q feat/m", self.lib)
         self.assertEqual(self.nxt()["action"], "review")
 
     def test_change_only_in_the_neighbour_invalidates_verify_and_review(self):

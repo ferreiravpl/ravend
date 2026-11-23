@@ -13,7 +13,7 @@ Verification is evidence, not opinion: every acceptance criterion maps to a test
 ## 1. Full gate
 `RV="python3 $RAVEND_ROOT/scripts/ravend.py"` (fallback: this skill's base dir + `/../../scripts/ravend.py`).
 Integrations (`$RV project` → `integrations`, roles for `verify`): `browser`, `api`, `database`, `design`, `observability`.
-Run `$RV gate full` (multi-repo spec, `next` → `repos`: run it inside each `repos[].abs`, then record from this repo). It runs every `gate.full` step from the local profile against the branch diff, starts the app when a step needs it, and prints only failure excerpts plus log paths. Do not re-run the same commands by hand to "double-check" — trust the gate output.
+Run `$RV gate full` (multi-repo spec, `next` → `repos`: run it inside each `repos[].abs`, then record from this repo; every repo must already be on the spec branch — never switch a repo's branch yourself, before or after: the records are tied to that branch's code). It runs every `gate.full` step from the local profile against the branch diff, starts the app when a step needs it, and prints only failure excerpts plus log paths. Do not re-run the same commands by hand to "double-check" — trust the gate output.
 
 ## 2. Acceptance-criteria matrix
 Read `<data_dir>/specs/<slug>/spec.md`. For each AC find the test that proves it (search test names/descriptions for the behavior; read the test to confirm it actually asserts the "then" clause). Classify:

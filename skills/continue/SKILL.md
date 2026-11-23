@@ -28,7 +28,7 @@ The next step is decided by code, never by you: `ravend.py next` reads the spec,
 | `ci` | `$RV ci <slug> --wait 9` with the Bash tool timeout at 600000 ms (the runtime reads the PR checks; never poll them yourself). Still pending → tell the user CI is running and to come back with `/ravend:continue`; stop. Otherwise loop. |
 | `merge` | Say CI is green and the merge is theirs (link `pr`). Stop. |
 | `handoff` | Multi-repo spec ready: show `message` and each repo (`repos`: name, path, branch). Opening the PRs is the developer's in this version; `ravend spec done <slug>` closes the spec. Stop. |
-| `human` | Stop. Summarize `message`, the `blocking` findings / `review` file and what was tried; hand over. |
+| `human` | Stop. Summarize `message`, the `blocking` findings / `review` file and what was tried; hand over. With `off_branch`, show `command` (the `git switch` that puts those repos back on the spec branch) and run it only if the developer says so. |
 | `done` | Say so, with the PR link if present. Stop. |
 
 4. Back to 1 until a checkpoint, `human`, `done` or the user stops you.
