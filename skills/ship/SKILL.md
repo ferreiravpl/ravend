@@ -11,7 +11,7 @@ argument-hint: "<slug>"
 Pushing and opening a PR is visible to the team: confirm with the user first unless `--yes` was given.
 
 ## 1. Preconditions (stop and report if any fails)
-`RV="python3 $RAVEND_ROOT/scripts/ravend.py"` (fallback: this skill's base dir + `/../../scripts/ravend.py`).
+`$RV` = the Ravend CLI line printed at session start (`python3 <plugin root>/scripts/ravend.py`; none → this skill's base dir + `/../../scripts/ravend.py`). Type it as that literal absolute path, one command per Bash call — never a shell variable, `;`, `&&`, a pipe or a redirection: headless permissions refuse those.
 - With a slug: `$RV next <slug> --json` must answer `ship` (gate full green, criteria covered and review approved, all on exactly this code). Anything else → report its `message` and suggest `/ravend:continue`. Do not ship around it. If it carries `pr`, the PR already exists: this run only commits and pushes the fix (section 2b).
 - Trivial change (no slug): `$RV status --json` → `last_gate.full.status == "PASS"` and its `fingerprint == tree`; otherwise run `gate full` first.
 - Working tree clean (commit leftovers that belong to the spec; ask about anything else).

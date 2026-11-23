@@ -9,7 +9,7 @@ argument-hint: "<slug | descrição de uma mudança trivial>"
 > **`--headless`**: never ask the user anything, and make your **final message exactly the JSON object in *Output*** — also when blocked or failing (use the blocked/FAIL form). The headless runner parses it.
 
 ## 0. Setup
-- `RV="python3 $RAVEND_ROOT/scripts/ravend.py"` (empty `RAVEND_ROOT` → this skill's base dir + `/../../scripts/ravend.py`). `$RV project` → `data_dir`, `base_branch`, `has_profile`. No profile → stop and ask for `/ravend:init` (the gate is what makes this pipeline trustworthy).
+- `$RV` = the Ravend CLI line printed at session start (`python3 <plugin root>/scripts/ravend.py`; none → this skill's base dir + `/../../scripts/ravend.py`). Type it as that literal absolute path, one command per Bash call — never a shell variable, `;`, `&&`, a pipe or a redirection: headless permissions refuse those. `$RV project` → `data_dir`, `base_branch`, `has_profile`. No profile → stop and ask for `/ravend:init` (the gate is what makes this pipeline trustworthy).
 - Argument is a slug → read `<data_dir>/specs/<slug>/spec.md`. No slug and it is a trivial change → work without a spec (skip to step 2, single "task").
 - **Mode**: `$RV next <slug> --json`. `build` → section 2 for `task`. `fix` → section 3 (`fix` = `verify`, `review` or `ci`; details in `problem`, `review`, `blocking`, `logs`). `approve` → interactive: ask for approval, then `$RV spec approve <slug>`; headless with `--approved`: run it; without: report blocked. Anything else → tell the user to run `/ravend:continue`.
 - Branch: if on `base_branch`, `git switch -c <spec.branch>` (or reuse it). If the tree has unrelated uncommitted changes, stop and ask — never mix them in.
@@ -20,7 +20,7 @@ argument-hint: "<slug | descrição de uma mudança trivial>"
 - **Multi-repo spec** (`next` has `repos`): each task comes with `repo` and `repo_path`. Read, edit, run `$RV gate fast` and commit **inside `repo_path`** (`cd` there); before that repo's first task, `git switch -c <spec.branch>` there (unrelated uncommitted changes → stop and ask). Run `$RV task done` and `$RV arm` from this (origin) repo. An edit refused because the directory is outside the session → ask the developer to run `/add-dir <repo_path>`, then retry; never work around it. `parallel: false` → never dispatch `ravend:implementer`; work sequentially.
 
 ## 1. Pick work
-Unchecked tasks in order, respecting `deps`. If ≥2 remaining tasks are marked `[P]` with disjoint files, you may dispatch one `ravend:implementer` agent per task with worktree isolation (Agent tool, `isolation: "worktree"`), give each the spec path + task id, then merge their branches one by one and run `$RV gate fast` after each merge. Otherwise work sequentially in this session — it is cheaper and keeps context coherent.
+Unchecked tasks in order, respecting `deps`. If ≥2 remaining tasks are marked `[P]` with disjoint files, you may dispatch one `ravend:implementer` agent per task with worktree isolation (Agent tool, `isolation: "worktree"`), give each the spec path + task id + the CLI's absolute path, then merge their branches one by one and run `$RV gate fast` after each merge. Otherwise work sequentially in this session — it is cheaper and keeps context coherent.
 
 ## 2. Per task: red → green → refactor → gate → commit
 Load [references/clean-code.md](references/clean-code.md) once per session; it is the standard for every line you write.

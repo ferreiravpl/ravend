@@ -32,4 +32,5 @@ graders:
     criteria: >-
       The review contains findings that include a P0 or P1 pointing at src/cart.js (the `gross > 10000` comparison) explaining that a
       cart of exactly 10000 cents gets no discount, violating AC1 ("10000 cents or more"), and/or that the tests
-      do not cover the 10000 boundary. Findings are not padded with style nits.
+      do not cover the 10000 boundary. Other findings, if any, come from Ravend's clean-code standard (e.g. magic
+      literals) or are real defects; the review is not padded with formatting or taste nits outside that standard.

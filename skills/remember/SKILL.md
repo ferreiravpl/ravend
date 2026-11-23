@@ -6,7 +6,7 @@ argument-hint: "<lição ou finding a guardar>"
 
 # Ravend · remember
 
-Knowledge is per developer and per project, stored at `<data_dir>/knowledge/` (`data_dir` from `python3 "$RAVEND_ROOT/scripts/ravend.py" project`). It is never committed. Its index is injected at session start, so it must stay short.
+Knowledge is per developer and per project, stored at `<data_dir>/knowledge/` (`data_dir` from `project` of the Ravend CLI (`python3 <plugin root>/scripts/ravend.py` from the session-start line, typed as that literal path)). It is never committed. Its index is injected at session start, so it must stay short.
 
 ## Capture only if all are true
 - **Specific to this codebase** (a convention, a trap, an integration quirk) — not general advice the model already knows ("use constructor injection").

@@ -8,7 +8,7 @@ argument-hint: "[slug, só se houver mais de uma spec em andamento]"
 
 The next step is decided by code, never by you: `ravend.py next` reads the spec, the gate state and the verify/review records and answers one action. Your job is to execute it, then ask again.
 
-`RV="python3 $RAVEND_ROOT/scripts/ravend.py"` (empty `RAVEND_ROOT` → this skill's base dir + `/../../scripts/ravend.py`).
+`$RV` = the Ravend CLI line printed at session start (`python3 <plugin root>/scripts/ravend.py`; none → this skill's base dir + `/../../scripts/ravend.py`). Type it as that literal absolute path, one command per Bash call — never a shell variable, `;`, `&&`, a pipe or a redirection: headless permissions refuse those.
 
 ## Loop
 1. `$RV next $ARGUMENTS --json` (no argument → it picks the only active spec, or the one whose branch is checked out).

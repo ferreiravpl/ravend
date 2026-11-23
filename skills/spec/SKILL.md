@@ -11,7 +11,7 @@ argument-hint: "<demanda | PROJ-123 | #45 | URL | arquivo.md> [--tier trivial|sm
 Goal: the smallest spec that lets the work be built and verified without guessing. One file, not five.
 
 ## 0. Locate project data
-Run `python3 "$RAVEND_ROOT/scripts/ravend.py" project` (if `RAVEND_ROOT` is empty, use this skill's base directory + `/../../scripts/ravend.py`). It prints `data_dir`. If `has_profile` is false, tell the user to run `/ravend:init` first (headless: proceed anyway, gate will be unavailable).
+Run `project` with the Ravend CLI (`python3 <plugin root>/scripts/ravend.py` from the session-start line, typed as that literal path); none → this skill's base directory + `/../../scripts/ravend.py`. It prints `data_dir`. If `has_profile` is false, tell the user to run `/ravend:init` first (headless: proceed anyway, gate will be unavailable).
 Specs live in `<data_dir>/specs/<slug>/spec.md` — on the developer's machine, never in the repo.
 The same output has `integrations`: MCP servers the developer chose per role. Here use `issues`/`git` for intake, `context` to explore code, `knowledge` for internal docs/decisions, `design` for UI frames, `database` for the real schema, `observability` for bug evidence (stack trace, frequency, first seen). A chosen server that is not connected → continue without it and say so in one line.
 

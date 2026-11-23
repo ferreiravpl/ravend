@@ -11,7 +11,7 @@ argument-hint: "<slug>"
 Verification is evidence, not opinion: every acceptance criterion maps to a test that ran green in the full gate.
 
 ## 1. Full gate
-`RV="python3 $RAVEND_ROOT/scripts/ravend.py"` (fallback: this skill's base dir + `/../../scripts/ravend.py`).
+`$RV` = the Ravend CLI line printed at session start (`python3 <plugin root>/scripts/ravend.py`; none → this skill's base dir + `/../../scripts/ravend.py`). Type it as that literal absolute path, one command per Bash call — never a shell variable, `;`, `&&`, a pipe or a redirection: headless permissions refuse those.
 Integrations (`$RV project` → `integrations`, roles for `verify`): `browser`, `api`, `database`, `design`, `observability`.
 Run `$RV gate full` (multi-repo spec, `next` → `repos`: run it inside each `repos[].abs`, then record from this repo; every repo must already be on the spec branch — never switch a repo's branch yourself, before or after: the records are tied to that branch's code). It runs every `gate.full` step from the local profile against the branch diff, starts the app when a step needs it, and prints only failure excerpts plus log paths. Do not re-run the same commands by hand to "double-check" — trust the gate output.
 
@@ -23,7 +23,7 @@ Read `<data_dir>/specs/<slug>/spec.md`. For each AC find the test that proves it
 
 ## 3. Close gaps
 - `[unit]`/`[api]` gaps → write the test (see `ravend:api-tests` for API level), run it. `[contract]`/`[async]`/`[migration]` gaps → `ravend:event-tests`. `[infra]` gaps → the plan/test/lint of the IaC stack skill. The `api` integration can exercise the endpoint to learn the real contract and `database` can confirm persistence — the proof is still a test in the repo.
-- `[e2e]`/`[visual]` gaps → delegate to the `ravend:verifier` agent with: spec path, the AC ids, app URL/start info from the profile, and the `browser` (default: Playwright MCP) and `design` server names. It explores the UI with that browser MCP and writes durable `@playwright/test` specs following `ravend:e2e-playwright`; browser snapshots stay in its context, not here.
+- `[e2e]`/`[visual]` gaps → delegate to the `ravend:verifier` agent with: spec path, the AC ids, app URL/start info from the profile, the CLI's absolute path, and the `browser` (default: Playwright MCP) and `design` server names. It explores the UI with that browser MCP and writes durable `@playwright/test` specs following `ravend:e2e-playwright`; browser snapshots stay in its context, not here.
 - Never change production code in this skill. If a new test exposes a real bug, record it as failing and record it with `--uncovered` so `next` sends it back to build as a fix.
 - Re-run `$RV gate full` after adding tests.
 

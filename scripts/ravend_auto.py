@@ -113,7 +113,8 @@ class Runner:
     def allowed_tools(self, stage: str = "build") -> list[str]:
         role_stage = {"fix-verify": "build", "fix-review": "build"}.get(stage, stage)
         tools = ["Read", "Edit", "Write", "MultiEdit", "Glob", "Grep", "Skill", "Agent", "TodoWrite",
-                 "Bash(git *)", f"Bash(python3 {ravend.PLUGIN_ROOT}/scripts/ravend.py *)", "Bash(mkdir *)"]
+                 "Bash(git *)", f"Bash(python3 {ravend.PLUGIN_ROOT}/scripts/ravend.py *)",
+                 f"Bash(python3 \"{ravend.PLUGIN_ROOT}/scripts/ravend.py\" *)", "Bash(mkdir *)"]
         tools += ravend.integration_tools(self.profile, role_stage)
         if role_stage == "verify" and "browser" not in ravend.integrations(self.profile):
             tools.append("mcp__playwright")  # the server /ravend:init suggests when no browser MCP was chosen
