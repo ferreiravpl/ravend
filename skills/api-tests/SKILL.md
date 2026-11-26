@@ -25,6 +25,7 @@ Name the test after the behavior it proves (no AC ids in code; verify.md maps AC
 ## Contract check (when an OpenAPI spec exists)
 - Spring springdoc → `/v3/api-docs`; Quarkus smallrye-openapi → `/q/openapi`.
 - If the change alters the contract, make sure the generated spec reflects it (annotations, DTO schema) and that frontend clients/types generated from it are regenerated the way the project does.
+- Hand-written (spec-first) OpenAPI: test the rules every operation follows (naming, error format, required headers, bounds on request fields, `Retry-After` on 429/503, examples valid against their schema). Statuses and codes per operation stay in the YAML, and breaking changes are the diff tool's job (oasdiff). Don't restate them in a test.
 - Optional fuzzing in gate.full when the tool is available: `schemathesis run http://localhost:8080/v3/api-docs --checks all` (needs `needs_app`).
 
 ## Rules

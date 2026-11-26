@@ -32,6 +32,8 @@ The goal is code a developer who never saw the spec understands in **30 seconds 
 - **No magic literals.** Every number, character or string whose meaning depends on the domain or a protocol gets a named constant or a helper: positions, weights, moduli, status codes, limits, header values, message fragments (`CHECK_DIGIT_MODULUS = 11`, `digitAt(code, i)` instead of `code.charAt(i) - '0'`). Only `0`, `1`, `-1`, `""` and the like used for their arithmetic meaning stay inline.
 - Library navigation chains (`a.getB().getC().get(KEY).getD()`) live in one adapter method named in domain terms; the rest of the code calls it. Raw types and casts from a library are confined there too.
 - Real types for structured data: no `Object[]`, untyped maps, nested collections (`Map<Integer, Set<String>>`) or tuples as domain data, no index-based field access, no cast chains or avoidable unchecked suppressions.
+- Fewest types that read well: when consumers need the same fields, one record — not an interface with implementations plus a holder type. Context a caller needs (the parent object, a status) travels next to the value in the call or stream, not inside the data type.
+- One name, one role: no overloads doing different jobs (a public entry and its recursive step) — the recursion gets its own name (`undeclaredFields(example)` → `undeclaredFieldsIn(node, schema)`).
 
 ## Layout
 Where the repository has no formatter deciding it:
@@ -42,16 +44,23 @@ Where the repository has no formatter deciding it:
 - **DRY**: one source of truth for each piece of knowledge — a catalog, a config, a mapping, a test setup, a default every row shares. Adding the next item should mean editing one place. Two pipelines with the same shape over different sources → one method with the source as parameter.
 - **YAGNI**: no branch, parameter, option, extension point or input type that no acceptance criterion needs. Validate at system boundaries; don't defend against cases that cannot occur inside.
 - **KISS**: the simplest construct the team already reads; standard library before a new abstraction; one obvious way.
+- **Delete before refactoring**: before restructuring code, ask whether it should exist at all. Polishing code that should be deleted is the costliest outcome.
+
+## What a test may assert
+- **Behavior**, or a **rule** every element of a declarative artifact (OpenAPI, schema, config, catalog) must follow: naming, error format, required headers, bounds declared, examples valid against their schema.
+- **Never a hand-kept copy of the artifact** (a per-endpoint table of statuses and codes, the values of a config file restated in code): every change goes in two places and the test only proves the copy matches. Compatibility belongs to the diff tool (oasdiff, schema registry, golden fixtures). An exact inventory (the list of endpoints) only when the AC is that inventory.
+- **Never prose**: descriptions, docs, comments or log wording. Rewording breaks the test, and an implementation that violates the sentence still passes. A rule only an implementation can honor is proven by that implementation's tests — now, or in the story that builds it.
+- **No domain logic in tests**: never reimplement a business algorithm (check digits, pricing, tax) to validate fixtures or compute expected values. Use the production code when it exists, otherwise known-good literals.
 
 ## Tests
 - A test body is arrange / act / assert in a few lines that state the scenario; walking structures, filtering and building labels go to helpers named after what they return (`pendingInvoices()`, `fieldsMissingFrom(schema, payload)`).
 - One shared helper/fixture/builder per setup — reuse what earlier tasks of the spec created; never copy setup between test classes.
-- Data tables: one row per line through a named builder/factory (`post("/orders").created().conflict("ORDER_EXISTS")`), shared defaults in the builder, no positional constructors with nested collections.
+- Data tables: one row per line, shared defaults in one helper, no positional constructors with nested collections. A builder only for inputs of the behavior under test (`order().withItem(...)`), never a DSL that restates a declarative file.
 - Variations of one case → a parameterized/table test. Resource lifecycle through the framework (fixtures, `@AutoClose`, `afterEach`), not hand-written open/close pairs.
 - Test names describe the behavior (`rejectsCouponBelowMinimum`), not ids.
 
 ## Comments
-- Business code and tests: comment only the **why** — a business rule, an external constraint, a non-obvious trap. Never restate the **what**. Doc comments on public API only when they add something the signature doesn't (unit, format, invariant, thrown errors); no `@param id the id`.
+- Business code and tests: comment only the **why** — a business rule, an external constraint, a non-obvious trap. Never restate the **what**. Doc comments on public API only when they add something the signature doesn't (unit, format, invariant, thrown errors); no `@param id the id`. A doc comment that paraphrases the name (`/** The type URI of a problem. */ problemType(...)`) restates; on records, test code and non-public helpers, doc comments only for a non-obvious why.
 - Foundation, infra and configuration (IaC, Helm values, CI workflows, build files, shared libraries' public API, framework config): comment each non-obvious setting, value or workaround with its reason and source (limit, incident, vendor docs) — readers can't infer intent from a value.
 - Never in code: references to the delivery process — review rounds, task ids, spec slugs, acceptance-criterion numbers, story ids, "decided on <date>". They go in commit messages and the PR.
 - No commented-out code.

@@ -2,6 +2,12 @@
 
 Uma linha por mudança, da versão mais nova para a mais antiga. É o que o aviso de atualização mostra; os detalhes ficam na descrição de cada PR.
 
+## 0.6.6
+- Testes provam comportamento ou regras: nada de copiar o contrato/config num teste, conferir texto de documentação ou reimplementar regra de negócio no teste.
+- O review pede para apagar esses testes (em vez de refatorá-los) e cobra evidência para o que o README afirma sobre comandos e ferramentas.
+- Clean code: um record no lugar de interface + implementações, nomes distintos para entrada e recursão, sem Javadoc que repete o nome.
+- Contratos de API: campos de request com limite no schema desde a v1, e `Retry-After` em toda resposta 429/503.
+
 ## 0.6.5
 - Aviso de atualização: ao abrir uma sessão (e no `ravend doctor`), o Ravend compara a versão instalada com a publicada e mostra o que mudou.
 

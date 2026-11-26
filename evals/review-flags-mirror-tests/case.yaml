@@ -1,0 +1,40 @@
+schema_version: "1.0"
+name: review-flags-mirror-tests
+description: A correct, clean change whose extra tests copy a declarative file, assert README wording and reimplement the discount formula as an oracle; the review asks to delete those tests instead of polishing them.
+tags: [review, clean-code, tests, headless]
+context:
+  scaffold_script: scaffold.sh
+execution:
+  prompt: /ravend:review cart-coupon --headless
+  max_turns: 30
+  timeout_seconds: 600
+  allowed_tools: [Read, Glob, Grep, Skill, Bash, Write, Agent]
+  env:
+    EVAL_RAVEND_HOME: .ravend-home
+runs: 1
+graders:
+  - type: tool_used
+    name: dispatched-reviewer-agent
+    tool: Agent
+    input_match: "reviewer"
+    min: 1
+  - type: regex
+    name: changes-requested
+    pattern: '"verdict"\s*:\s*"CHANGES_REQUESTED"'
+  - type: file_exists
+    name: review-file-written
+    path: .ravend-home/projects/example.com-acme-shop/specs/cart-coupon/review-1.md
+  - type: llm
+    name: asks-to-delete-mirror-tests
+    focus:
+      source: file
+      path: .ravend-home/projects/example.com-acme-shop/specs/cart-coupon/review-1.md
+    criteria: >-
+      The review has at least one P1 on test/cart.test.js, and together its findings cover all three of: (1) the test
+      that restates src/coupons.json as an expected object ("the coupon catalog is exactly the expected one");
+      (2) the test that asserts README wording ("the README documents the coupon rules"); (3) the test whose
+      expected values come from expectedTotal, a reimplementation of the discount formula. For (1) and (2) the
+      action is to delete the test (pointing to where the guarantee really lives is a plus); for (3) it is to
+      delete it or replace the oracle with literal expected values. No finding asks to keep these tests and refactor
+      them into helpers, builders or stricter assertions, and no finding claims a correctness bug in total() (the
+      >= 10000 boundary and rounding are correct and tested).

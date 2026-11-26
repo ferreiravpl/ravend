@@ -6,6 +6,7 @@
 #   make-shop.sh messy    -> spec + feature branch with a correct but unclean implementation
 #   make-shop.sh dense    -> spec + feature branch with a correct, low-complexity but dense implementation
 #   make-shop.sh unnamed  -> spec + feature branch with a correct implementation using mechanism names and one-line pipelines
+#   make-shop.sh mirror   -> spec + feature branch with a clean implementation whose extra tests copy the catalog, assert README wording and reimplement the formula
 #   make-shop.sh english  -> spec + AGENTS.md requiring English code comments
 # Ravend data goes to ./.ravend-home (RAVEND_HOME in case.yaml), excluded from git.
 set -euo pipefail
@@ -233,6 +234,92 @@ test('SAVE10 keeps carts below 10000 cents unchanged', () => {
 
 test('an unknown coupon is rejected', () => {
   assert.throws(() => total([], 'NOPE'), /invalid coupon/);
+});
+EOF
+elif [ "$variant" = "mirror" ]; then
+  cat > src/coupons.json <<'EOF'
+{ "SAVE10": { "min_cents": 10000, "percent_kept": 90 } }
+EOF
+  cat > src/cart.js <<'EOF'
+import { readFileSync } from 'node:fs';
+
+const COUPONS = JSON.parse(readFileSync(new URL('./coupons.json', import.meta.url), 'utf8'));
+const PERCENT = 100;
+
+/** Total of the cart in cents. items: [{ sku, price, qty }] */
+export function total(items, code) {
+  const gross = subtotal(items);
+  if (code === undefined) {
+    return gross;
+  }
+
+  if (!Object.hasOwn(COUPONS, code)) {
+    throw new Error('invalid coupon');
+  }
+
+  const coupon = COUPONS[code];
+
+  if (gross < coupon.min_cents) {
+    return gross;
+  }
+
+  return Math.floor((gross * coupon.percent_kept) / PERCENT);
+}
+
+function subtotal(items) {
+  return items.reduce((sum, item) => sum + item.price * item.qty, 0);
+}
+
+export function label(items) {
+  return `Total: ${total(items)}`;
+}
+EOF
+  cat > README.md <<'EOF'
+# shop
+
+## Coupons
+Coupons live in `src/coupons.json`. An unknown coupon code throws `invalid coupon`; a cart below the coupon minimum
+pays full price.
+EOF
+  cat >> test/cart.test.js <<'EOF'
+import { readFileSync } from 'node:fs';
+
+test('SAVE10 takes 10% off carts of 10000 cents or more', () => {
+  assert.equal(total([{ sku: 'A', price: 10000, qty: 1 }], 'SAVE10'), 9000);
+  assert.equal(total([{ sku: 'A', price: 20001, qty: 1 }], 'SAVE10'), 18000);
+});
+
+test('SAVE10 keeps carts below 10000 cents unchanged', () => {
+  assert.equal(total([{ sku: 'A', price: 9999, qty: 1 }], 'SAVE10'), 9999);
+});
+
+test('an unknown coupon is rejected', () => {
+  assert.throws(() => total([], 'NOPE'), /invalid coupon/);
+});
+
+test('the coupon catalog is exactly the expected one', () => {
+  const catalog = JSON.parse(readFileSync(new URL('../src/coupons.json', import.meta.url), 'utf8'));
+  assert.deepEqual(catalog, { SAVE10: { min_cents: 10000, percent_kept: 90 } });
+});
+
+test('the README documents the coupon rules', () => {
+  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+  assert.ok(readme.includes('An unknown coupon code throws'));
+  assert.ok(readme.includes('below the coupon minimum'));
+});
+
+function expectedTotal(gross, minCents, percentKept) {
+  if (gross < minCents) {
+    return gross;
+  }
+
+  return Math.floor((gross * percentKept) / 100);
+}
+
+test('SAVE10 follows the discount formula for many carts', () => {
+  for (const price of [0, 5000, 9999, 10000, 15555, 99999]) {
+    assert.equal(total([{ sku: 'A', price, qty: 1 }], 'SAVE10'), expectedTotal(price, 10000, 90));
+  }
 });
 EOF
 else
