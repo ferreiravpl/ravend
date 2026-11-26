@@ -2,6 +2,9 @@
 
 Uma linha por mudança, da versão mais nova para a mais antiga. É o que o aviso de atualização mostra; os detalhes ficam na descrição de cada PR.
 
+## 0.6.7
+- Clean code: interface continua certa quando as implementações têm comportamento diferente (porta e adaptador, estratégia, dublê de teste, contrato do framework); vira um record só quando as implementações apenas carregam dados.
+
 ## 0.6.6
 - Testes provam comportamento ou regras: nada de copiar o contrato/config num teste, conferir texto de documentação ou reimplementar regra de negócio no teste.
 - O review pede para apagar esses testes (em vez de refatorá-los) e cobra evidência para o que o README afirma sobre comandos e ferramentas.
