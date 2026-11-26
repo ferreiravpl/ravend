@@ -253,10 +253,11 @@ export function total(items, code) {
     return gross;
   }
 
-  const coupon = COUPONS[code];
-  if (!coupon) {
+  if (!Object.hasOwn(COUPONS, code)) {
     throw new Error('invalid coupon');
   }
+
+  const coupon = COUPONS[code];
 
   if (gross < coupon.min_cents) {
     return gross;
