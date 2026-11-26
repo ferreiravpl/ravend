@@ -28,6 +28,8 @@ A lens is an extra checklist for a risk area (`profile.risk[].lenses`). `ravend 
 ## contract
 - API and event changes are additive; a breaking change gets a new version published in parallel.
 - Consumers ignore unknown fields; producers keep required fields.
+- Request fields declare upper bounds in the schema from the first version (`maxLength`, `maxItems`, `maximum`, `pattern`, `enum`): compatibility checkers treat a bound added later as breaking. Lower bounds and content rules may stay in the description when the server answers its own error code.
+- Every response that tells the client to retry (429, 503) declares `Retry-After`, so clients don't retry in lockstep.
 - Contract tests (golden fixtures / OpenAPI) updated on both producer and consumer sides.
 - Multi-repo spec: each repo can be deployed alone and in any order — consumers accept the old and the new shape, producers keep fields still read; versions/coordinates of the shared artifact consistent across repos.
 
